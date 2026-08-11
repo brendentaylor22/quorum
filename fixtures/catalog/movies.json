@@ -1,0 +1,28 @@
+{
+  "fixture_version": "synthetic-v1",
+  "source": "synthetic",
+  "notice": "Fictional test data. Not derived from TMDB.",
+  "movies": [
+    {"fixture_id":"fixture-01","title":"Orbit at Dawn","year":2018,"synopsis":"A repair crew races sunrise across an unstable orbital station.","runtime_minutes":103,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/01"},
+    {"fixture_id":"fixture-02","title":"The Last Teahouse","year":2021,"synopsis":"Three strangers shelter from a storm and trade unfinished stories.","runtime_minutes":96,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/02"},
+    {"fixture_id":"fixture-03","title":"Copper Sky","year":2017,"synopsis":"A pilot follows an impossible radio signal across a desert frontier.","runtime_minutes":112,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/03"},
+    {"fixture_id":"fixture-04","title":"Midnight Cartographers","year":2023,"synopsis":"Mapmakers discover their city changes shape after dark.","runtime_minutes":109,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/04"},
+    {"fixture_id":"fixture-05","title":"Borrowed Summer","year":2019,"synopsis":"Old friends reunite to save a lakeside cinema.","runtime_minutes":101,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/05"},
+    {"fixture_id":"fixture-06","title":"Static Garden","year":2022,"synopsis":"A botanist hears coded messages hidden in greenhouse recordings.","runtime_minutes":118,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/06"},
+    {"fixture_id":"fixture-07","title":"Paper Moons of June","year":2016,"synopsis":"Two siblings build a planetarium from scraps before leaving home.","runtime_minutes":94,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/07"},
+    {"fixture_id":"fixture-08","title":"Northbound Signal","year":2020,"synopsis":"A train conductor receives warnings from a station that does not exist.","runtime_minutes":107,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/08"},
+    {"fixture_id":"fixture-09","title":"The Quiet Current","year":2015,"synopsis":"A river guide uncovers a town's forgotten pact.","runtime_minutes":99,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/09"},
+    {"fixture_id":"fixture-10","title":"Lanterns for Tomorrow","year":2024,"synopsis":"Young inventors light their island after its power station fails.","runtime_minutes":105,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/10"},
+    {"fixture_id":"fixture-11","title":"Glass Harbour","year":2018,"synopsis":"A diver searches submerged streets for a missing archive.","runtime_minutes":114,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/11"},
+    {"fixture_id":"fixture-12","title":"Second Bell","year":2021,"synopsis":"A retired boxer returns to coach an unlikely neighborhood team.","runtime_minutes":110,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/12"},
+    {"fixture_id":"fixture-13","title":"Snowline Radio","year":2019,"synopsis":"Mountain rescuers trace a distress call repeating from the past.","runtime_minutes":102,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/13"},
+    {"fixture_id":"fixture-14","title":"Small Hours Club","year":2022,"synopsis":"Night-shift workers form a band before their diner closes.","runtime_minutes":97,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/14"},
+    {"fixture_id":"fixture-15","title":"The Blue Orchard","year":2017,"synopsis":"A family farm blooms with fruit that reveals shared memories.","runtime_minutes":108,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/15"},
+    {"fixture_id":"fixture-16","title":"One More Crossing","year":2020,"synopsis":"Ferry passengers work together when navigation systems fail.","runtime_minutes":100,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/16"},
+    {"fixture_id":"fixture-17","title":"Archive of Rain","year":2023,"synopsis":"A sound engineer reconstructs a vanished monsoon from old tapes.","runtime_minutes":116,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/17"},
+    {"fixture_id":"fixture-18","title":"The Sunday Mechanic","year":2016,"synopsis":"A careful mechanic enters a chaotic cross-country rally.","runtime_minutes":104,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/18"},
+    {"fixture_id":"fixture-19","title":"Farthest Window","year":2024,"synopsis":"An astronomer and neighbor investigate a light beyond mapped space.","runtime_minutes":121,"content_rating":"PG-13","language":"en","poster_ref":"fixture://poster/19"},
+    {"fixture_id":"fixture-20","title":"After the Parade","year":2015,"synopsis":"A cleanup crew finds clues to a celebration nobody remembers.","runtime_minutes":98,"content_rating":"PG","language":"en","poster_ref":"fixture://poster/20"}
+  ]
+}
+

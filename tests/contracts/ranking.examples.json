@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contract": "quorum-ranking-v1",
+  "rules": {
+    "approval_pct": "100 * yes / eligible",
+    "coverage_pct": "100 * responses / eligible",
+    "match": "eligible > 0 && yes == eligible",
+    "sort": ["approval_pct DESC", "coverage_pct DESC"],
+    "rank": "shared competition rank",
+    "display_tie_order": "slate_position ASC"
+  },
+  "examples": [
+    {
+      "name": "four-person complete room with tie and match",
+      "eligible": 4,
+      "input": [
+        {"item": "A", "slate_position": 1, "yes": 4, "responses": 4},
+        {"item": "B", "slate_position": 2, "yes": 3, "responses": 4},
+        {"item": "C", "slate_position": 3, "yes": 3, "responses": 4},
+        {"item": "D", "slate_position": 4, "yes": 2, "responses": 4}
+      ],
+      "expected": [
+        {"rank": 1, "item": "A", "approval_pct": 100, "coverage_pct": 100, "yes_fraction": "4/4", "match": true},
+        {"rank": 2, "item": "B", "approval_pct": 75, "coverage_pct": 100, "yes_fraction": "3/4", "match": false},
+        {"rank": 2, "item": "C", "approval_pct": 75, "coverage_pct": 100, "yes_fraction": "3/4", "match": false},
+        {"rank": 4, "item": "D", "approval_pct": 50, "coverage_pct": 100, "yes_fraction": "2/4", "match": false}
+      ]
+    },
+    {
+      "name": "early close keeps non-responses in denominator",
+      "eligible": 4,
+      "input": [
+        {"item": "A", "slate_position": 1, "yes": 1, "responses": 1},
+        {"item": "B", "slate_position": 2, "yes": 1, "responses": 3},
+        {"item": "C", "slate_position": 3, "yes": 0, "responses": 4}
+      ],
+      "expected": [
+        {"rank": 1, "item": "B", "approval_pct": 25, "coverage_pct": 75, "yes_fraction": "1/4", "match": false},
+        {"rank": 2, "item": "A", "approval_pct": 25, "coverage_pct": 25, "yes_fraction": "1/4", "match": false},
+        {"rank": 3, "item": "C", "approval_pct": 0, "coverage_pct": 100, "yes_fraction": "0/4", "match": false}
+      ]
+    },
+    {
+      "name": "solo room is binary shortlist",
+      "eligible": 1,
+      "input": [
+        {"item": "No", "slate_position": 1, "yes": 0, "responses": 1},
+        {"item": "Yes", "slate_position": 2, "yes": 1, "responses": 1}
+      ],
+      "expected": [
+        {"rank": 1, "item": "Yes", "approval_pct": 100, "coverage_pct": 100, "yes_fraction": "1/1", "match": true},
+        {"rank": 2, "item": "No", "approval_pct": 0, "coverage_pct": 100, "yes_fraction": "0/1", "match": false}
+      ]
+    }
+  ]
+}
+
