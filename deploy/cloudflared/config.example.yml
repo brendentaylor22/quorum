@@ -1,0 +1,11 @@
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /run/secrets/tunnel-credentials.json
+no-autoupdate: true
+
+ingress:
+  - hostname: quorum.example.com
+    service: http://app:3000
+    originRequest:
+      connectTimeout: 10s
+      noHappyEyeballs: true
+  - service: http_status:404

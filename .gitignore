@@ -1,14 +1,17 @@
-.DS_Store
-.env
-.env.*
-!.env.example
 node_modules/
 dist/
 coverage/
 playwright-report/
 test-results/
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 backups/
+.DS_Store
 

@@ -1,0 +1,80 @@
+name: quorum
+
+services:
+  app:
+    image: ${QUORUM_IMAGE:-quorum:local}
+    build:
+      context: ..
+      args:
+        VCS_REF: ${QUORUM_VCS_REF:-local}
+    restart: unless-stopped
+    init: true
+    user: '10001:10001'
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    volumes:
+      - quorum-data:/data
+      - ./backups:/backups
+    networks:
+      - quorum-edge
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
+    profiles:
+      - tunnel
+    restart: unless-stopped
+    user: '65532:65532'
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 128m
+    cpus: 0.5
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --config
+      - /etc/cloudflared/config.yml
+      - run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./secrets/tunnel-credentials.json:/run/secrets/tunnel-credentials.json:ro
+    networks:
+      - quorum-edge
+      - tunnel-egress
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  quorum-data:
+    name: ${QUORUM_DATA_VOLUME:-quorum-data}
+
+networks:
+  quorum-edge:
+    name: quorum-edge
+    internal: true
+  tunnel-egress:
+    name: quorum-tunnel-egress
