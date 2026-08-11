@@ -32,6 +32,8 @@ networks=quorum-edge only
 
 Application checks from inside internal network returned readiness HTTP 200 and static shell HTTP 200. No host port was published.
 
+Production `deploy/compose.yaml` is pull-only and requires immutable `QUORUM_IMAGE`; it has no build context. Repository-local builds use explicit `deploy/compose.local.yaml` override and cannot silently become VM fallback builds.
+
 Pinned local Trivy scan against final image returned:
 
 ```json

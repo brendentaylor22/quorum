@@ -2,11 +2,7 @@ name: quorum
 
 services:
   app:
-    image: ${QUORUM_IMAGE:-quorum:local}
-    build:
-      context: ..
-      args:
-        VCS_REF: ${QUORUM_VCS_REF:-local}
+    image: ${QUORUM_IMAGE:?Set QUORUM_IMAGE to an immutable GHCR image digest}
     restart: unless-stopped
     init: true
     user: '10001:10001'

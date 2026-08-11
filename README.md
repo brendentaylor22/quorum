@@ -25,6 +25,21 @@ QUORUM_DATABASE_PATH=.local/quorum.db npm start
 
 Container and operator instructions: [Phase 1 evidence](docs/phase-1/README.md) and [operator runbook](docs/phase-1/operator-runbook.md).
 
+## Release and deployment
+
+Push annotated `v*` tag from commit contained in `main`. Release workflow tests, scans, publishes immutable GHCR image, generates SBOM, and creates GitHub Release containing checksum-protected pull-only deployment bundle.
+
+Exact tagging procedure: [release runbook](docs/phase-1/release-runbook.md).
+
+Production VM does not clone this repository or build image. Operator downloads release bundle, verifies checksum, supplies Cloudflare credential, then runs:
+
+```sh
+scripts/quorumctl start --tunnel
+scripts/quorumctl doctor
+```
+
+Compose pulls exact `ghcr.io/...@sha256:...` image recorded in bundle-generated `deploy/.env`.
+
 ## Phase 0 evidence
 
 - [Phase 0 index](docs/phase-0/README.md)
