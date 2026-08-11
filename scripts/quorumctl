@@ -1,0 +1,103 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+compose_file="$project_dir/deploy/compose.yaml"
+env_file="$project_dir/deploy/.env"
+
+usage() {
+  printf '%s\n' 'Usage: quorumctl start [--tunnel] | stop | status | doctor | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
+  exit 2
+}
+
+compose() {
+  docker compose --file "$compose_file" --env-file "$env_file" "$@"
+}
+
+require_env() {
+  if [ ! -f "$env_file" ]; then
+    printf 'Missing %s; copy deploy/.env.example and set exact values.\n' "$env_file" >&2
+    exit 1
+  fi
+}
+
+command=${1:-}
+case "$command" in
+  start)
+    require_env
+    if [ "${2:-}" = '--tunnel' ]; then
+      compose --profile tunnel up --detach
+    else
+      compose up --detach app
+    fi
+    ;;
+  stop)
+    require_env
+    compose stop
+    ;;
+  status)
+    require_env
+    compose ps
+    ;;
+  doctor)
+    require_env
+    compose exec --no-TTY app node apps/api/dist/cli.js doctor
+    ;;
+  backup)
+    require_env
+    name=${2:-}
+    case "$name" in
+      ''|*/*|*[!A-Za-z0-9._-]*) usage ;;
+    esac
+    mkdir -p "$project_dir/deploy/backups"
+    compose exec --no-TTY app node apps/api/dist/cli.js backup "/backups/$name"
+    ;;
+  restore)
+    require_env
+    backup_name=${2:-}
+    volume_name=${3:-}
+    case "$backup_name" in
+      ''|*/*|*[!A-Za-z0-9._-]*) usage ;;
+    esac
+    case "$volume_name" in
+      ''|*[!A-Za-z0-9_.-]*) usage ;;
+    esac
+    backup_path="$project_dir/deploy/backups/$backup_name"
+    [ -f "$backup_path" ] || { printf 'Backup not found: %s\n' "$backup_path" >&2; exit 1; }
+    if docker volume inspect "$volume_name" >/dev/null 2>&1; then
+      printf 'Refusing existing restore volume: %s\n' "$volume_name" >&2
+      exit 1
+    fi
+    printf 'Type restore volume name (%s) to continue: ' "$volume_name" >&2
+    read -r confirmation
+    [ "$confirmation" = "$volume_name" ] || { printf '%s\n' 'Restore cancelled.' >&2; exit 1; }
+    image=$(compose config --images | sed -n '1p')
+    docker volume create "$volume_name" >/dev/null
+    docker run --rm --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+      --mount "type=bind,source=$backup_path,target=/backup/quorum.db,readonly" \
+      --mount "type=volume,source=$volume_name,target=/data" \
+      "$image" node apps/api/dist/cli.js restore /backup/quorum.db /data/quorum.db
+    docker run --rm --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+      --mount "type=volume,source=$volume_name,target=/data" \
+      "$image" node apps/api/dist/cli.js doctor
+    ;;
+  logs)
+    require_env
+    compose logs --follow --tail 200
+    ;;
+  rollback)
+    require_env
+    image=${2:-}
+    case "$image" in
+      *@sha256:*) ;;
+      *) printf '%s\n' 'Rollback image must include immutable @sha256 digest.' >&2; exit 1 ;;
+    esac
+    docker pull "$image"
+    QUORUM_IMAGE="$image" compose up --detach --no-deps app
+    QUORUM_IMAGE="$image" compose exec --no-TTY app node apps/api/dist/cli.js doctor
+    printf '%s\n' 'Rollback verified. Persist QUORUM_IMAGE in deploy/.env after review.'
+    ;;
+  *) usage ;;
+esac
+

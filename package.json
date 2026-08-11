@@ -1,0 +1,41 @@
+{
+  "name": "quorum",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private group movie voting",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @quorum/database && npm run build --workspace @quorum/web && npm run build --workspace @quorum/api",
+    "dev": "npm run dev --workspace @quorum/api",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "npm run build --workspace @quorum/database && npm run typecheck --workspaces --if-present",
+    "pretest": "npm run build --workspace @quorum/database",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "licenses": "license-checker-rseidelsohn --onlyAllow '0BSD;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;MIT;Python-2.0;CC0-1.0;CC-BY-3.0;(MIT AND CC-BY-3.0);MPL-2.0;BlueOak-1.0.0;UNLICENSED'",
+    "start": "npm run start --workspace @quorum/api",
+    "quorumctl": "node apps/api/dist/cli.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "10.8.1",
+    "eslint-config-prettier": "10.1.8",
+    "license-checker-rseidelsohn": "5.0.1",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.10"
+  }
+}

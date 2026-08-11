@@ -1,0 +1,8 @@
+# Phase 0 landed before automated formatting. Preserve its reviewed text byte-for-byte.
+QUORUM_IMPLEMENTATION_PLAN.md
+docs/adr/
+docs/phase-0/
+fixtures/
+tests/acceptance/
+tests/contracts/
+
