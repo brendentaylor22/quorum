@@ -109,7 +109,6 @@ jobs:
             "$bundle_root/scripts"
           cp deploy/compose.yaml "$bundle_root/deploy/compose.yaml"
           cp deploy/cloudflared/config.example.yml "$bundle_root/deploy/cloudflared/config.example.yml"
-          cp deploy/backups/.gitignore "$bundle_root/deploy/backups/.gitignore"
           cp deploy/secrets/.gitignore "$bundle_root/deploy/secrets/.gitignore"
           cp deploy/secrets/README.md "$bundle_root/deploy/secrets/README.md"
           cp scripts/quorumctl "$bundle_root/scripts/quorumctl"
