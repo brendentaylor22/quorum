@@ -2,7 +2,28 @@
 
 Quorum helps one person or a group privately choose a movie from a shared slate.
 
-Current status: Phase 0 product contract and threat model. No deployable application exists yet.
+Current status: Phase 1 secure foundation implemented. Product room/voting flows begin in Phase 2.
+
+## Development
+
+Requires Node.js 24 and Docker with Compose.
+
+```sh
+npm ci
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+Run locally with a writable database path:
+
+```sh
+QUORUM_DATABASE_PATH=.local/quorum.db npm start
+```
+
+Container and operator instructions: [Phase 1 evidence](docs/phase-1/README.md) and [operator runbook](docs/phase-1/operator-runbook.md).
 
 ## Phase 0 evidence
 
@@ -18,4 +39,3 @@ Current status: Phase 0 product contract and threat model. No deployable applica
 - [Synthetic 20-movie fixture](fixtures/catalog/movies.json)
 
 See [implementation plan](QUORUM_IMPLEMENTATION_PLAN.md) for later phases.
-
