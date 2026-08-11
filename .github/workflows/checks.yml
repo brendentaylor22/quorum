@@ -27,6 +27,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # @quorum/database exports generated declarations; build them before ESLint
+      # resolves @quorum/database from the API workspace.
+      - run: npm run build --workspace @quorum/database
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
@@ -45,6 +48,8 @@ jobs:
           fetch-depth: 0
       - name: Scan repository for secrets
         uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   image:
     runs-on: ubuntu-latest
