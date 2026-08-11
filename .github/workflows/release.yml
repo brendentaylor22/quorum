@@ -26,6 +26,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # @quorum/database exports generated declarations; build them before ESLint
+      # resolves @quorum/database from the API workspace.
+      - run: npm run build --workspace @quorum/database
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
