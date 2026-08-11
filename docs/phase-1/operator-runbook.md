@@ -5,37 +5,38 @@
 No repository clone, Node.js toolchain, compiler, or source tree belongs on VM. GitHub builds Quorum. Release workflow attaches pull-only deployment bundle containing Compose file, operator script, runbooks, and `.env` already pinned to published GHCR digest.
 
 1. Install patched Docker Engine with Compose plugin. Create low-privilege deployment administrator; do not add unrelated mounts, networks, or Docker socket access.
-2. Download `quorum-deploy-VERSION.tar.gz` and `SHA256SUMS` from matching GitHub Release. For public repository:
+2. Download `quorum-deploy.tar.gz` and `SHA256SUMS` from latest GitHub Release. For public repository:
 
    ```sh
-   QUORUM_VERSION=v0.1.2
    mkdir -p "$HOME/quorum-download"
    cd "$HOME/quorum-download"
    curl --fail --location --remote-name \
-     "https://github.com/brendentaylor22/quorum/releases/download/${QUORUM_VERSION}/quorum-deploy-${QUORUM_VERSION}.tar.gz"
+     "https://github.com/brendentaylor22/quorum/releases/latest/download/quorum-deploy.tar.gz"
    curl --fail --location --remote-name \
-     "https://github.com/brendentaylor22/quorum/releases/download/${QUORUM_VERSION}/SHA256SUMS"
-   grep "quorum-deploy-${QUORUM_VERSION}.tar.gz" SHA256SUMS | sha256sum --check -
-   install -d -m 0700 "$HOME/quorum"
-   tar --extract --gzip \
-     --file "quorum-deploy-${QUORUM_VERSION}.tar.gz" \
-     --strip-components 1 \
-     --directory "$HOME/quorum"
-   cd "$HOME/quorum"
+     "https://github.com/brendentaylor22/quorum/releases/latest/download/SHA256SUMS"
    ```
 
    For private repository, download same two assets through authenticated GitHub CLI or browser; no clone required:
 
    ```sh
-   QUORUM_VERSION=v0.1.2
    mkdir -p "$HOME/quorum-download"
-   gh release download "$QUORUM_VERSION" \
-     --repo brendentaylor22/quorum \
-     --pattern "quorum-deploy-${QUORUM_VERSION}.tar.gz" \
+   gh release download --repo brendentaylor22/quorum \
+     --pattern quorum-deploy.tar.gz \
      --pattern SHA256SUMS \
      --dir "$HOME/quorum-download"
+   ```
+
+   Verify and extract downloaded bundle:
+
+   ```sh
    cd "$HOME/quorum-download"
-   grep "quorum-deploy-${QUORUM_VERSION}.tar.gz" SHA256SUMS | sha256sum --check -
+   grep 'quorum-deploy.tar.gz' SHA256SUMS | sha256sum --check -
+   install -d -m 0700 "$HOME/quorum"
+   tar --extract --gzip \
+     --file quorum-deploy.tar.gz \
+     --strip-components 1 \
+     --directory "$HOME/quorum"
+   cd "$HOME/quorum"
    ```
 
 3. Inspect `RELEASE` and `deploy/.env`. `QUORUM_IMAGE` must contain exact `ghcr.io/brendentaylor22/quorum@sha256:...` identity, never floating tag.

@@ -27,9 +27,9 @@ Container and operator instructions: [Phase 1 evidence](docs/phase-1/README.md) 
 
 ## Release and deployment
 
-Push annotated `v*` tag from commit contained in `main`. Release workflow tests, scans, publishes immutable GHCR image, generates SBOM, and creates GitHub Release containing checksum-protected pull-only deployment bundle.
+Every push to `main`, including a merged pull request, runs release workflow. It tests, scans, publishes GHCR image, generates SBOM, and creates commit-named GitHub Release containing checksum-protected pull-only deployment bundle.
 
-Exact tagging procedure: [release runbook](docs/phase-1/release-runbook.md).
+No manual release tag is required. Exact procedure: [release runbook](docs/phase-1/release-runbook.md).
 
 Production VM does not clone this repository or build image. Operator downloads release bundle, verifies checksum, supplies Cloudflare credential, then runs:
 

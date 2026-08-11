@@ -12,7 +12,7 @@ Status: implementation complete; local evidence recorded, fresh-VM/release evide
 | Pull-only VM deployment bundle                      | GitHub Release archive, checksum, generated digest-pinned `.env` |
 | Tunnel and secret examples                          | `deploy/cloudflared`, `deploy/secrets`, `.env.example`           |
 | Operations and rollback                             | Operator and rollback runbooks, `scripts/quorumctl`              |
-| Release creation                                    | Tagged-release runbook and immutable tag policy                  |
+| Release creation                                    | Automatic `main` release runbook and commit identity policy      |
 | Update/vulnerability response                       | Dependency security policy, Dependabot config                    |
 
 Local implementation evidence: [local-validation.md](local-validation.md).
