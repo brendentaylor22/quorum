@@ -43,6 +43,7 @@ generated once and stored beside the database as `dev-token-secret` with mode
 | GET    | `/api/invites/:inviteToken`      | invite capability                      |
 | POST   | `/api/invites/:inviteToken/join` | invite capability                      |
 | GET    | `/api/host/:hostToken`           | host capability                        |
+| POST   | `/api/host/:hostToken/join`      | host capability                        |
 | GET    | `/api/rooms/:roomId`             | participant session or host capability |
 | POST   | `/api/rooms/:roomId/start`       | host capability                        |
 | POST   | `/api/rooms/:roomId/close`       | host capability                        |

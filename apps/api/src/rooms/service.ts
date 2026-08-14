@@ -212,7 +212,28 @@ export class RoomService {
   }
 
   join(inviteToken: string, displayName: string, asHost: boolean): JoinedRoom {
-    const room = this.roomByInvite(inviteToken);
+    return this.addParticipant(this.roomByInvite(inviteToken), displayName, {
+      asHost,
+    });
+  }
+
+  /**
+   * The host joins its own room with the host capability alone: the invite
+   * token is only ever stored hashed, so it cannot be handed back to them.
+   */
+  joinAsHost(hostToken: string, displayName: string): JoinedRoom {
+    const room = this.roomByHostCapability(hostToken);
+    if (repository.findHostParticipant(this.database, room.id) !== undefined) {
+      throw conflict('Host has already joined this room');
+    }
+    return this.addParticipant(room, displayName, { asHost: true });
+  }
+
+  private addParticipant(
+    room: RoomRow,
+    displayName: string,
+    options: { asHost: boolean },
+  ): JoinedRoom {
     if (room.state !== 'LOBBY') {
       throw conflict('Room is no longer accepting participants');
     }
@@ -229,7 +250,7 @@ export class RoomService {
       publicId,
       displayName,
       sessionTokenHash: hashCapability(this.secret, sessionToken),
-      isHost: asHost,
+      isHost: options.asHost,
       now: this.nowIso(),
     });
     repository.recordAudit(

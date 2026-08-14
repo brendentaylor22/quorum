@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { recallInvite, usePoll } from '../hooks.js';
 import { Results } from './Results.js';
+import { SwipeDeck } from './SwipeDeck.js';
 
 export function HostScreen({ hostToken }: { hostToken: string }) {
   const load = useCallback(async () => api.hostRoom(hostToken), [hostToken]);
@@ -10,6 +11,7 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
   const [results, setResults] = useState<ResultsResponse | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [displayName, setDisplayName] = useState('');
 
   useEffect(() => {
     if (room?.state !== 'COMPLETE' || results !== null) return;
@@ -39,6 +41,31 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
       });
   }
 
+  // The host votes through the same session cookie as everyone else, so the
+  // host view refresh — not the swipe response — stays the source of truth.
+  const onChoice = useCallback(
+    (choice: 'LEFT' | 'RIGHT') => {
+      const card = room?.card;
+      if (room === null || card === undefined || card === null || busy) return;
+      setBusy(true);
+      setNotice(null);
+      void api
+        .swipe(room.roomId, card.exposureId, choice)
+        .catch((caught: unknown) => {
+          setNotice(
+            caught instanceof Error
+              ? caught.message
+              : 'That vote was not confirmed. Try again.',
+          );
+        })
+        .finally(() => {
+          void refresh();
+          setBusy(false);
+        });
+    },
+    [busy, refresh, room],
+  );
+
   if (error !== null && room === null) {
     return (
       <section>
@@ -53,6 +80,7 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
   const everyoneDone =
     room.participants.length > 0 &&
     room.participants.every((participant) => participant.complete);
+  const playing = room.you !== null;
 
   return (
     <section aria-labelledby="host-heading">
@@ -67,23 +95,75 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
           link again.
         </p>
       ) : (
-        <div className="link-row">
-          <span className="link-label">Invite</span>
-          <a href={`/join/${invite}`}>
-            {new URL(`/join/${invite}`, globalThis.location.href).toString()}
-          </a>
-        </div>
+        <>
+          <div className="link-row">
+            <span className="link-label">Invite</span>
+            <a href={`/join/${invite}`}>
+              {new URL(`/join/${invite}`, globalThis.location.href).toString()}
+            </a>
+          </div>
+          <p className="hint">
+            Share the invite link. Keep this page&rsquo;s address private: it
+            controls the room.
+          </p>
+        </>
       )}
       <ul className="people">
         {room.participants.map((participant) => (
           <li key={participant.participantId}>
             <span>{participant.displayName}</span>
+            {participant.participantId === room.you?.participantId ? (
+              <span className="tag">You</span>
+            ) : null}
             <span className="tag">
               {participant.confirmedCount}/{room.slateSize || 20}
             </span>
           </li>
         ))}
       </ul>
+      {room.state === 'LOBBY' && !playing ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBusy(true);
+            setNotice(null);
+            void api
+              .hostJoin(hostToken, displayName)
+              .then(() => refresh())
+              .catch((caught: unknown) => {
+                setNotice(
+                  caught instanceof Error
+                    ? caught.message
+                    : 'Could not join as a player.',
+                );
+              })
+              .finally(() => {
+                setBusy(false);
+              });
+          }}
+        >
+          <label htmlFor="host-display-name">
+            Vote too? Pick a display name
+          </label>
+          <input
+            id="host-display-name"
+            name="displayName"
+            maxLength={40}
+            required
+            autoComplete="off"
+            value={displayName}
+            onChange={(event) => {
+              setDisplayName(event.target.value);
+            }}
+          />
+          <button
+            type="submit"
+            disabled={busy || displayName.trim().length === 0}
+          >
+            Join as a player
+          </button>
+        </form>
+      ) : null}
       {room.state === 'LOBBY' ? (
         <button
           type="button"
@@ -94,6 +174,15 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
         >
           Start voting ({room.participants.length} joined)
         </button>
+      ) : null}
+      {room.state === 'VOTING' && room.card !== null ? (
+        <SwipeDeck card={room.card} busy={busy} onChoice={onChoice} />
+      ) : null}
+      {room.state === 'VOTING' && playing && room.card === null ? (
+        <p className="lede">
+          You are done voting. Results appear when everyone finishes or you
+          close voting.
+        </p>
       ) : null}
       {room.state === 'VOTING' ? (
         <button

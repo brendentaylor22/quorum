@@ -89,6 +89,16 @@ export const api = {
       hostToken,
     }),
 
+  hostJoin: async (
+    hostToken: string,
+    displayName: string,
+  ): Promise<{ participantId: string; room: RoomView }> =>
+    request(`/api/host/${hostToken}/join`, {
+      method: 'POST',
+      body: { displayName },
+      hostToken,
+    }),
+
   room: async (roomId: string): Promise<RoomView> =>
     request<RoomView>(`/api/rooms/${roomId}`),
 

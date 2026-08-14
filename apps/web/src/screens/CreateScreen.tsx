@@ -1,44 +1,14 @@
-import type { CreateRoomResponse } from '@quorum/contracts';
 import { useState } from 'react';
 import { api } from '../api.js';
 import { rememberInvite } from '../hooks.js';
-
-function absolute(path: string): string {
-  return new URL(path, globalThis.location.href).toString();
-}
-
-function LinkRow({ label, path }: { label: string; path: string }) {
-  const url = absolute(path);
-  return (
-    <div className="link-row">
-      <span className="link-label">{label}</span>
-      <a href={path}>{url}</a>
-    </div>
-  );
-}
+import { HostScreen } from './HostScreen.js';
 
 export function CreateScreen() {
-  const [room, setRoom] = useState<CreateRoomResponse | null>(null);
+  const [hostToken, setHostToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  if (room !== null) {
-    return (
-      <section aria-labelledby="created-heading">
-        <h2 id="created-heading">Room ready</h2>
-        <p className="lede">
-          Share the invite link. Keep the host link private: it controls the
-          room.
-        </p>
-        <LinkRow label="Invite" path={room.invitePath} />
-        <LinkRow label="Host controls" path={room.hostPath} />
-        <p className="hint">
-          The room expires at {new Date(room.expiresAt).toLocaleString()} if it
-          is not used.
-        </p>
-      </section>
-    );
-  }
+  if (hostToken !== null) return <HostScreen hostToken={hostToken} />;
 
   return (
     <section aria-labelledby="create-heading">
@@ -57,7 +27,10 @@ export function CreateScreen() {
             .createRoom()
             .then((created) => {
               rememberInvite(created.roomId, created.inviteToken);
-              setRoom(created);
+              // The host link is the room's private address: put it in the URL
+              // so a refresh or a bookmark returns to these controls.
+              globalThis.history.replaceState(null, '', created.hostPath);
+              setHostToken(created.hostToken);
             })
             .catch((caught: unknown) => {
               setNotice(

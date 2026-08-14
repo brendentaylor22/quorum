@@ -168,10 +168,35 @@ export function registerRoomRoutes(
 
   app.get('/api/host/:hostToken', (request) => {
     const { hostToken: token } = request.params as { hostToken: string };
-    const room = service.roomByHostCapability(parsePathToken(token));
-    return service.view(room, {
-      participant: undefined,
-      isHost: true,
+    const capability = parsePathToken(token);
+    const room = service.roomByHostCapability(capability);
+    // Resolve the session too, so a host who is also playing sees their card.
+    const { room: resolved, caller } = service.resolveCaller(
+      room.publicId,
+      sessionToken(request, room.publicId),
+      capability,
+    );
+    return service.view(resolved, caller);
+  });
+
+  app.post('/api/host/:hostToken/join', (request, reply) => {
+    requireSameOrigin(request);
+    const { hostToken: token } = request.params as { hostToken: string };
+    const capability = parsePathToken(token);
+    const parsed = joinRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      throw new ApiError(400, 'invalid_request', 'Invalid display name');
+    }
+    const joined = service.joinAsHost(capability, parsed.data.displayName);
+    setSessionCookie(reply, joined.roomId, joined.sessionToken);
+    const { room, caller } = service.resolveCaller(
+      joined.roomId,
+      joined.sessionToken,
+      capability,
+    );
+    return reply.code(201).send({
+      participantId: joined.participantId,
+      room: service.view(room, caller),
     });
   });
 

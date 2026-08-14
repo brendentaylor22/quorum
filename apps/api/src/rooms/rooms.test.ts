@@ -522,6 +522,87 @@ describe('authorization', () => {
     });
     expect(again.statusCode).toBe(409);
   });
+
+  it('lets the host join with the host capability, then start and vote', async () => {
+    const app = await createApp();
+    const room = await createRoom(app);
+
+    const joined = await app.inject({
+      method: 'POST',
+      url: `/api/host/${room.hostToken}/join`,
+      headers: { ...mutationHeaders, [HOST_TOKEN_HEADER]: room.hostToken },
+      payload: { displayName: 'Host' },
+    });
+    expect(joined.statusCode).toBe(201);
+    const cookie = joined.cookies.find(
+      (candidate) => candidate.name === sessionCookieName(room.roomId),
+    );
+    expect(cookie).toBeDefined();
+    const host: Participant = {
+      roomId: room.roomId,
+      participantId: joined.json<{ participantId: string }>().participantId,
+      cookie: `${cookie?.name ?? ''}=${cookie?.value ?? ''}`,
+    };
+    expect(joined.json<{ room: RoomView }>().room.you?.isHost).toBe(true);
+
+    await start(app, room);
+
+    // The host view carries the host's own card once they are also a player.
+    const hostView = await app.inject({
+      method: 'GET',
+      url: `/api/host/${room.hostToken}`,
+      headers: { cookie: host.cookie },
+    });
+    expect(hostView.statusCode).toBe(200);
+    const asHost = hostView.json<RoomView>();
+    expect(asHost.isHost).toBe(true);
+    expect(asHost.you?.participantId).toBe(host.participantId);
+    expect(asHost.card).not.toBeNull();
+
+    const swiped = await swipe(
+      app,
+      host,
+      asHost.card?.exposureId ?? '',
+      'RIGHT',
+    );
+    expect(swiped.statusCode).toBe(200);
+    expect(swiped.room?.you?.confirmedCount).toBe(1);
+  });
+
+  it('refuses a second host join and rejects host joins without the capability', async () => {
+    const app = await createApp();
+    const room = await createRoom(app);
+    const hostJoin = {
+      method: 'POST' as const,
+      url: `/api/host/${room.hostToken}/join`,
+      headers: { ...mutationHeaders, [HOST_TOKEN_HEADER]: room.hostToken },
+      payload: { displayName: 'Host' },
+    };
+    expect((await app.inject(hostJoin)).statusCode).toBe(201);
+    expect((await app.inject(hostJoin)).statusCode).toBe(409);
+
+    const wrongCapability = await app.inject({
+      method: 'POST',
+      url: `/api/host/${room.inviteToken}/join`,
+      headers: mutationHeaders,
+      payload: { displayName: 'Impostor' },
+    });
+    expect(wrongCapability.statusCode).toBe(404);
+  });
+
+  it('leaves the host view usable before the host joins as a player', async () => {
+    const app = await createApp();
+    const room = await createRoom(app);
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/host/${room.hostToken}`,
+    });
+    expect(response.statusCode).toBe(200);
+    const asHost = response.json<RoomView>();
+    expect(asHost.isHost).toBe(true);
+    expect(asHost.you).toBeNull();
+    expect(asHost.card).toBeNull();
+  });
 });
 
 describe('durability', () => {
