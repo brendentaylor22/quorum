@@ -11,7 +11,7 @@
 1. Run `scripts/quorumctl backup pre-rollback-YYYYMMDDTHHMMSSZ.db`.
 2. Run `scripts/quorumctl doctor`; stop if integrity fails.
 3. Run `scripts/quorumctl rollback ghcr.io/brendentaylor22/quorum@sha256:FULL_DIGEST`.
-4. Confirm health, static shell, running image digest, logs, and `foundation_records` count.
+4. Confirm health, static shell, running image digest, logs, and `rooms`/`interactions` counts.
 5. Persist verified digest as `QUORUM_IMAGE` in `deploy/.env`.
 
 If target fails health, repeat with previously running digest. Escalate instead of deleting volume or reversing migrations.

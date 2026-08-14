@@ -13,5 +13,9 @@ test-results/
 *.sqlite-shm
 *.sqlite-wal
 backups/
+.data/
+dev-token-secret
 .DS_Store
 
+deploy/secrets/*
+!deploy/secrets/README.md

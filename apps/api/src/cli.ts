@@ -1,3 +1,4 @@
+import { loadFixtureCatalog } from '@quorum/catalog';
 import {
   backupDatabase,
   databasePath,
@@ -7,10 +8,11 @@ import {
   openDatabase,
   restoreDatabase,
 } from '@quorum/database';
+import { importCatalog } from './rooms/repository.js';
 
 function usage(): never {
   throw new Error(
-    'Usage: quorumctl migrate | seed-foundation | doctor [db] | backup <new-path> | restore <backup> <new-db-path>',
+    'Usage: quorumctl migrate | import-catalog | doctor [db] | backup <new-path> | restore <backup> <new-db-path>',
   );
 }
 
@@ -29,16 +31,16 @@ async function main(): Promise<void> {
       }
       break;
     }
-    case 'seed-foundation': {
+    case 'import-catalog': {
       const database = openDatabase(path);
       try {
         migrate(database, migrationsDirectory);
-        database
-          .prepare(
-            'INSERT OR IGNORE INTO foundation_records (name, created_at) VALUES (?, ?)',
-          )
-          .run('phase-1-persistence-proof', new Date().toISOString());
-        console.log(JSON.stringify(inspectDatabase(path)));
+        const imported = importCatalog(
+          database,
+          loadFixtureCatalog(),
+          new Date().toISOString(),
+        );
+        console.log(JSON.stringify({ imported }));
       } finally {
         database.close();
       }

@@ -5,9 +5,7 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  packages: write
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -17,6 +15,9 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -33,9 +34,9 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # @quorum/database exports generated declarations; build them before ESLint
-      # resolves @quorum/database from the API workspace.
-      - run: npm run build --workspace @quorum/database
+      # Workspace packages export generated declarations; build them before
+      # ESLint and tsc resolve @quorum/* from the app workspaces.
+      - run: npm run build --workspace @quorum/contracts --workspace @quorum/ranking --workspace @quorum/catalog --workspace @quorum/database
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
@@ -88,6 +89,17 @@ jobs:
           build-args: VCS_REF=${{ github.sha }}
           provenance: mode=max
           cache-from: type=gha
+      # The pre-push scan gates a locally loaded build, not the artifact that
+      # operators actually pull. Re-scan the published digest so the release can
+      # only complete if the exact deployed image is clean.
+      - name: Block critical and high findings in published digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}@${{ steps.publish.outputs.digest }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
       - name: Generate SPDX SBOM from published digest
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:

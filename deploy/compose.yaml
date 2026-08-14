@@ -16,6 +16,11 @@ services:
     cpus: 1.0
     tmpfs:
       - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    environment:
+      # Keyed hashes of invite, host, and session capabilities derive from this.
+      QUORUM_TOKEN_SECRET_FILE: /run/secrets/quorum_token_secret
+    secrets:
+      - quorum_token_secret
     volumes:
       - quorum-data:/data
       - ./backups:/backups
@@ -63,6 +68,10 @@ services:
     depends_on:
       app:
         condition: service_healthy
+
+secrets:
+  quorum_token_secret:
+    file: ./secrets/token-secret
 
 volumes:
   quorum-data:

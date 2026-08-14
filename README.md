@@ -2,7 +2,7 @@
 
 Quorum helps one person or a group privately choose a movie from a shared slate.
 
-Current status: Phase 1 secure foundation implemented. Product room/voting flows begin in Phase 2.
+Current status: Phase 2 step 2a complete. Rooms, invite and host capabilities, private swiping, and ranked results run locally in a browser against fixture movies.
 
 ## Development
 
@@ -17,7 +17,14 @@ npm test
 npm run build
 ```
 
-Run locally with a writable database path:
+Run the local product loop (API plus client, SQLite file under `.data`):
+
+```sh
+npm run dev
+```
+
+Open <http://localhost:5173>, create a room, and open the invite link in a
+second window to play both sides. Run the built server alone with:
 
 ```sh
 QUORUM_DATABASE_PATH=.local/quorum.db npm start
@@ -39,6 +46,10 @@ scripts/quorumctl doctor
 ```
 
 Compose pulls exact `ghcr.io/...@sha256:...` image recorded in bundle-generated `deploy/.env`.
+
+## Phase 2 evidence
+
+- [Phase 2 index](docs/phase-2/README.md)
 
 ## Phase 0 evidence
 

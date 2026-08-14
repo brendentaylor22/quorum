@@ -9,11 +9,15 @@ RUN apt-get update \
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY packages/catalog/package.json packages/catalog/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/database/package.json packages/database/package.json
+COPY packages/ranking/package.json packages/ranking/package.json
 RUN npm ci
 COPY tsconfig.base.json eslint.config.mjs .prettierrc.json vitest.config.ts ./
 COPY apps apps
 COPY packages packages
+COPY fixtures fixtures
 RUN npm run build && npm prune --omit=dev
 
 FROM ${NODE_IMAGE} AS runtime
@@ -37,9 +41,17 @@ COPY --from=build --chown=root:root /build/node_modules ./node_modules
 COPY --from=build --chown=root:root /build/apps/api/package.json ./apps/api/package.json
 COPY --from=build --chown=root:root /build/apps/api/dist ./apps/api/dist
 COPY --from=build --chown=root:root /build/apps/web/dist ./apps/web/dist
+COPY --from=build --chown=root:root /build/packages/catalog/package.json ./packages/catalog/package.json
+COPY --from=build --chown=root:root /build/packages/catalog/dist ./packages/catalog/dist
+COPY --from=build --chown=root:root /build/packages/contracts/package.json ./packages/contracts/package.json
+COPY --from=build --chown=root:root /build/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build --chown=root:root /build/packages/ranking/package.json ./packages/ranking/package.json
+COPY --from=build --chown=root:root /build/packages/ranking/dist ./packages/ranking/dist
 COPY --from=build --chown=root:root /build/packages/database/package.json ./packages/database/package.json
 COPY --from=build --chown=root:root /build/packages/database/dist ./packages/database/dist
 COPY --from=build --chown=root:root /build/packages/database/migrations ./packages/database/migrations
+# The fixture catalog is the Phase 2 movie source; Phase 4 replaces it with TMDB.
+COPY --from=build --chown=root:root /build/fixtures ./fixtures
 USER 10001:10001
 EXPOSE 3000
 CMD ["node", "apps/api/dist/main.js"]
