@@ -5,9 +5,12 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
 compose_file="$project_dir/deploy/compose.yaml"
 env_file="$project_dir/deploy/.env"
+backups_dir="$project_dir/deploy/backups"
+token_secret_file="$project_dir/deploy/secrets/token-secret"
+runtime_uid=10001
 
 usage() {
-  printf '%s\n' 'Usage: quorumctl start [--tunnel] | stop | status | doctor | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
+  printf '%s\n' 'Usage: quorumctl start [--tunnel] | stop | status | doctor | migrate | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
   exit 2
 }
 
@@ -22,10 +25,53 @@ require_env() {
   fi
 }
 
+# The app container runs as unprivileged UID 10001 and writes backups through the
+# ./backups bind mount. A freshly extracted bundle leaves that directory owned by
+# the operator, so the write fails inside the container with an opaque error.
+# Check it here and print the exact remediation instead.
+require_writable_backups() {
+  mkdir -p "$backups_dir"
+  if ! docker run --rm --read-only --user "$runtime_uid:$runtime_uid" \
+    --cap-drop ALL --security-opt no-new-privileges \
+    --mount "type=bind,source=$backups_dir,target=/backups" \
+    "$(runtime_image)" node -e 'require("node:fs").accessSync("/backups", require("node:fs").constants.W_OK)' \
+    >/dev/null 2>&1; then
+    printf 'Backup directory is not writable by runtime UID %s: %s\n' "$runtime_uid" "$backups_dir" >&2
+    printf 'Fix with: sudo chown %s:%s %s && chmod 0750 %s\n' \
+      "$runtime_uid" "$runtime_uid" "$backups_dir" "$backups_dir" >&2
+    exit 1
+  fi
+}
+
+# Resolve the app image from the pinned digest in deploy/.env rather than from
+# `compose config --images`, whose output order and membership change when a
+# tunnel profile is active.
+runtime_image() {
+  image=$(sed -n 's/^[[:space:]]*QUORUM_IMAGE[[:space:]]*=[[:space:]]*//p' "$env_file" | sed -n '1p')
+  if [ -z "${image:-}" ]; then
+    printf 'QUORUM_IMAGE is not set in %s.\n' "$env_file" >&2
+    exit 1
+  fi
+  printf '%s\n' "$image"
+}
+
+# Capability hashes are keyed by this secret. Losing or changing it invalidates
+# every live invite, host link, and participant session, so it must exist before
+# the app starts and must never be regenerated casually.
+require_token_secret() {
+  if [ ! -s "$token_secret_file" ]; then
+    printf 'Missing runtime token secret: %s\n' "$token_secret_file" >&2
+    printf 'Create it once with: openssl rand -hex 32 > %s && chmod 0400 %s\n' \
+      "$token_secret_file" "$token_secret_file" >&2
+    exit 1
+  fi
+}
+
 command=${1:-}
 case "$command" in
   start)
     require_env
+    require_token_secret
     if [ "${2:-}" = '--tunnel' ]; then
       compose --profile tunnel up --detach
     else
@@ -44,13 +90,17 @@ case "$command" in
     require_env
     compose exec --no-TTY app node apps/api/dist/cli.js doctor
     ;;
+  migrate)
+    require_env
+    compose exec --no-TTY app node apps/api/dist/cli.js migrate
+    ;;
   backup)
     require_env
     name=${2:-}
     case "$name" in
       ''|*/*|*[!A-Za-z0-9._-]*) usage ;;
     esac
-    mkdir -p "$project_dir/deploy/backups"
+    require_writable_backups
     compose exec --no-TTY app node apps/api/dist/cli.js backup "/backups/$name"
     ;;
   restore)
@@ -63,7 +113,7 @@ case "$command" in
     case "$volume_name" in
       ''|*[!A-Za-z0-9_.-]*) usage ;;
     esac
-    backup_path="$project_dir/deploy/backups/$backup_name"
+    backup_path="$backups_dir/$backup_name"
     [ -f "$backup_path" ] || { printf 'Backup not found: %s\n' "$backup_path" >&2; exit 1; }
     if docker volume inspect "$volume_name" >/dev/null 2>&1; then
       printf 'Refusing existing restore volume: %s\n' "$volume_name" >&2
@@ -72,13 +122,13 @@ case "$command" in
     printf 'Type restore volume name (%s) to continue: ' "$volume_name" >&2
     read -r confirmation
     [ "$confirmation" = "$volume_name" ] || { printf '%s\n' 'Restore cancelled.' >&2; exit 1; }
-    image=$(compose config --images | sed -n '1p')
+    image=$(runtime_image)
     docker volume create "$volume_name" >/dev/null
-    docker run --rm --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+    docker run --rm --read-only --user "$runtime_uid:$runtime_uid" --cap-drop ALL --security-opt no-new-privileges \
       --mount "type=bind,source=$backup_path,target=/backup/quorum.db,readonly" \
       --mount "type=volume,source=$volume_name,target=/data" \
       "$image" node apps/api/dist/cli.js restore /backup/quorum.db /data/quorum.db
-    docker run --rm --read-only --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+    docker run --rm --read-only --user "$runtime_uid:$runtime_uid" --cap-drop ALL --security-opt no-new-privileges \
       --mount "type=volume,source=$volume_name,target=/data" \
       "$image" node apps/api/dist/cli.js doctor
     ;;

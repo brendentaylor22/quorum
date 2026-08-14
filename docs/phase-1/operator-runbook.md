@@ -48,7 +48,26 @@ No repository clone, Node.js toolchain, compiler, or source tree belongs on VM. 
    chmod 0440 deploy/secrets/tunnel-credentials.json
    ```
 
-5. If GHCR package is private, authenticate Docker using read-only package credential. Do not store token in repository or deployment bundle.
+5. Give the backup directory to the runtime UID. Application runs as unprivileged `10001:10001` and writes backups through the `deploy/backups` bind mount; a freshly extracted bundle leaves that directory owned by deployment administrator, so backups would fail.
+
+   ```sh
+   mkdir -p deploy/backups
+   sudo chown 10001:10001 deploy/backups
+   chmod 0750 deploy/backups
+   ```
+
+   `scripts/quorumctl backup` verifies this before running and refuses with the same remediation if ownership is wrong.
+
+6. Create the runtime token secret. Every stored invite, host, and participant-session hash is keyed with it, so it must exist before first start and must not be rotated casually: rotation invalidates every live room and session.
+
+   ```sh
+   openssl rand -hex 32 > deploy/secrets/token-secret
+   chmod 0400 deploy/secrets/token-secret
+   ```
+
+   `scripts/quorumctl start` refuses to run without it. Back it up with the same care as the database; a lost secret makes existing rooms unreachable.
+
+7. If GHCR package is private, authenticate Docker using read-only package credential. Do not store token in repository or deployment bundle.
 
    ```sh
    read -r -s -p 'GHCR read token: ' GHCR_READ_TOKEN
@@ -57,21 +76,21 @@ No repository clone, Node.js toolchain, compiler, or source tree belongs on VM. 
    unset GHCR_READ_TOKEN
    ```
 
-6. Run `scripts/quorumctl start --tunnel`. Compose pulls exact image digest from GHCR; no local build occurs.
-7. Run `scripts/quorumctl doctor`. Confirm Compose exposes no host ports and application has only `quorum-edge` network.
+8. Run `scripts/quorumctl start --tunnel`. Compose pulls exact image digest from GHCR; no local build occurs.
+9. Run `scripts/quorumctl doctor`. Confirm Compose exposes no host ports and application has only `quorum-edge` network.
 
 Host firewall must deny inbound public/LAN traffic except explicit administration source. Outbound policy must allow only documented DNS/NTP, GHCR, and Cloudflare Tunnel destinations. Phase 1 code makes no external application requests.
 
 ## Persistence proof
 
 ```sh
-docker compose --file deploy/compose.yaml --env-file deploy/.env exec --no-TTY app node apps/api/dist/cli.js seed-foundation
+docker compose --file deploy/compose.yaml --env-file deploy/.env exec --no-TTY app node apps/api/dist/cli.js import-catalog
 scripts/quorumctl stop
 scripts/quorumctl start
 scripts/quorumctl doctor
 ```
 
-`foundation_records` count must remain `1` after restart.
+`catalog_items` count must remain `20` after restart, and any room, exposure, and interaction counts must be unchanged.
 
 ## Backup and clean-volume restore
 
@@ -90,6 +109,7 @@ To test restored volume, set `QUORUM_DATA_VOLUME` in `deploy/.env` to new volume
 - `scripts/quorumctl stop`: stop containers; never removes volume.
 - `scripts/quorumctl status`: show container and health state.
 - `scripts/quorumctl doctor`: migrate forward, then verify SQLite integrity and counts.
+- `scripts/quorumctl migrate`: apply pending forward-only migrations and report applied names.
 - `scripts/quorumctl logs`: follow last 200 lines.
 - `scripts/quorumctl backup NAME.db`: make verified online backup.
 - `scripts/quorumctl restore NAME.db NEW_VOLUME`: verified clean-volume restore.
