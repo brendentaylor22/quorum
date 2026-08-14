@@ -308,6 +308,19 @@ export function listParticipants(
   ).map(toParticipant);
 }
 
+export function findHostParticipant(
+  database: QuorumDatabase,
+  roomId: number,
+): ParticipantRow | undefined {
+  const row = database
+    .prepare(
+      `SELECT ${participantColumns} FROM participants p
+        WHERE p.room_id = ? AND p.is_host = 1 ORDER BY p.id LIMIT 1`,
+    )
+    .get(roomId) as RawParticipant | undefined;
+  return row === undefined ? undefined : toParticipant(row);
+}
+
 export function countParticipants(
   database: QuorumDatabase,
   roomId: number,

@@ -7,16 +7,16 @@ async function createRoom(
 ): Promise<{ invitePath: string; hostPath: string }> {
   await page.goto('/');
   await page.getByRole('button', { name: 'Create room' }).click();
-  await expect(page.getByRole('heading', { name: 'Room ready' })).toBeVisible();
-  const links = page.locator('.link-row a');
+  // Creating a room lands straight on the host controls at the host URL.
+  await expect(
+    page.getByRole('heading', { name: 'Host controls' }),
+  ).toBeVisible();
   const invitePath = new URL(
-    (await links.nth(0).getAttribute('href')) ?? '',
+    (await page.locator('.link-row a').first().getAttribute('href')) ?? '',
     'http://127.0.0.1',
   ).pathname;
-  const hostPath = new URL(
-    (await links.nth(1).getAttribute('href')) ?? '',
-    'http://127.0.0.1',
-  ).pathname;
+  const hostPath = new URL(page.url()).pathname;
+  expect(hostPath.startsWith('/host/')).toBe(true);
   return { invitePath, hostPath };
 }
 
