@@ -115,13 +115,27 @@ export class RoomService {
     };
   }
 
-  /** Load the fixture catalog snapshot. Phase 4 replaces the source only. */
-  importFixtureCatalog(): number {
-    return repository.importCatalog(
-      this.database,
-      loadFixtureCatalog(),
-      this.nowIso(),
-    );
+  /**
+   * Seed the fixture catalog, unless a real one is installed.
+   *
+   * This runs on every boot so a fresh checkout has movies to vote on. It must
+   * never overwrite an imported catalog: committing a version deactivates
+   * every other row, so seeding unconditionally would silently revert a TMDB
+   * import to fixtures on the next restart. A fixture catalog is still
+   * refreshed, so widening the fixture takes effect without a manual step.
+   */
+  seedFixtureCatalog(): number {
+    const installed = catalogStatus(this.database).current;
+    const fixture = loadFixtureCatalog();
+    const fixtureProvider = fixture[0]?.provider;
+    if (
+      installed !== null &&
+      installed.provider !== fixtureProvider &&
+      installed.itemCount > 0
+    ) {
+      return 0;
+    }
+    return repository.importCatalog(this.database, fixture, this.nowIso());
   }
 
   private nowIso(): string {

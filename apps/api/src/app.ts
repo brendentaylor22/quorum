@@ -31,7 +31,7 @@ export async function buildApp(
     secret: resolveTokenSecret(options.databasePath),
     ...(options.now === undefined ? {} : { now: options.now }),
   });
-  service.importFixtureCatalog();
+  service.seedFixtureCatalog();
 
   const app = Fastify({
     logger: options.logger ?? false,

@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { listTopCatalogIds } from '../rooms/repository.js';
+import { RoomService } from '../rooms/service.js';
 import {
   CATALOG_DEFAULTS,
   importOptionsFromEnvironment,
@@ -197,6 +198,40 @@ describe('commitCatalogVersion', () => {
     expect(catalogAgeDays(database, new Date('2026-08-14T12:00:00.000Z'))).toBe(
       13,
     );
+  });
+});
+
+describe('fixture seeding', () => {
+  function service(database: QuorumDatabase): RoomService {
+    return new RoomService({ database, secret: Buffer.alloc(32, 1) });
+  }
+
+  it('seeds the fixture when nothing is installed', () => {
+    const database = freshDatabase();
+    expect(service(database).seedFixtureCatalog()).toBeGreaterThanOrEqual(20);
+    expect(catalogStatus(database).current?.provider).toBe('synthetic');
+  });
+
+  it('refreshes a fixture catalog on a later boot', () => {
+    const database = freshDatabase();
+    const instance = service(database);
+    instance.seedFixtureCatalog();
+    expect(instance.seedFixtureCatalog()).toBeGreaterThanOrEqual(20);
+    expect(catalogStatus(database).current?.provider).toBe('synthetic');
+  });
+
+  it('never overwrites an imported catalog', () => {
+    const database = freshDatabase();
+    commit(database, 'tmdb-v1', [writeItem('1'), writeItem('2')]);
+
+    // Booting again must leave the real catalog in place; seeding commits a
+    // version, which would otherwise deactivate every imported row.
+    expect(service(database).seedFixtureCatalog()).toBe(0);
+
+    const status = catalogStatus(database);
+    expect(status.current?.provider).toBe('tmdb');
+    expect(status.current?.version).toBe('tmdb-v1');
+    expect(status.activeItems).toBe(2);
   });
 });
 
