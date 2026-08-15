@@ -1,4 +1,5 @@
 import type { ResultsResponse } from '@quorum/contracts';
+import { Poster } from './SwipeDeck.js';
 
 export function Results({ results }: { results: ResultsResponse }) {
   return (
@@ -21,6 +22,9 @@ export function Results({ results }: { results: ResultsResponse }) {
         {results.items.map((item) => (
           <li key={item.catalogItemId} className={item.match ? 'match' : ''}>
             <span className="rank">{item.rank}</span>
+            <span className="thumb">
+              <Poster item={item.item} />
+            </span>
             <span className="title">
               <span className="name">{item.item.title}</span>
               {item.match ? <span className="badge">Match</span> : null}

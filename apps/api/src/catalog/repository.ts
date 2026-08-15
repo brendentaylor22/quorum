@@ -41,6 +41,10 @@ export interface CatalogVersionRow {
   poolMeanRating: number;
   startedAt: string;
   completedAt: string | null;
+  /** Provider CDN base for posters, captured at import time. */
+  imageBaseUrl: string | null;
+  /** Poster size chosen from what the provider offered. */
+  posterSize: string | null;
 }
 
 export interface CatalogStatus {
@@ -66,6 +70,8 @@ export function commitCatalogVersion(
     poolMeanRating: number;
     startedAt: string;
     completedAt: string;
+    imageBaseUrl?: string | null;
+    posterSize?: string | null;
     items: readonly CatalogWriteItem[];
   },
 ): number {
@@ -143,13 +149,16 @@ export function commitCatalogVersion(
     database
       .prepare(
         `UPDATE catalog_versions
-            SET is_current = 1, item_count = ?, pool_mean_rating = ?, completed_at = ?
+            SET is_current = 1, item_count = ?, pool_mean_rating = ?,
+                completed_at = ?, image_base_url = ?, poster_size = ?
           WHERE version = ?`,
       )
       .run(
         input.items.length,
         input.poolMeanRating,
         input.completedAt,
+        input.imageBaseUrl ?? null,
+        input.posterSize ?? null,
         input.version,
       );
     // Rows from any earlier version are retired, never deleted: room_items
@@ -266,7 +275,8 @@ export function catalogStatus(database: QuorumDatabase): CatalogStatus {
     .prepare(
       `SELECT version, provider, item_count AS itemCount,
               min_vote_count AS minVoteCount, pool_mean_rating AS poolMeanRating,
-              started_at AS startedAt, completed_at AS completedAt
+              started_at AS startedAt, completed_at AS completedAt,
+              image_base_url AS imageBaseUrl, poster_size AS posterSize
          FROM catalog_versions WHERE is_current = 1`,
     )
     .get() as CatalogVersionRow | undefined;

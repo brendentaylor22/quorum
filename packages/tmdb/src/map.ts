@@ -129,12 +129,25 @@ export function toCatalogItem(
 }
 
 /**
+ * Confidence threshold for the weighted rating, deliberately separate from the
+ * import's inclusion threshold.
+ *
+ * They answer different questions. Inclusion asks "is this film rated at all?"
+ * — a few hundred votes is enough. Ranking asks "do we trust this average
+ * against an all-time list?", which needs far more: at a low threshold a fresh
+ * release with a couple of thousand enthusiastic early votes outranks
+ * Schindler's List. Measured against the real catalog, 3000 clears that
+ * inflation while still leaving well-evidenced older films near the top.
+ */
+export const DEFAULT_RATING_PRIOR_VOTES = 3000;
+
+/**
  * Resolve `weightedRating` across a finished pool. The pool mean is a property
  * of the whole import, so this runs once after mapping rather than per item.
  */
 export function applyWeightedRatings(
   items: readonly TmdbCatalogItem[],
-  minVotes: number,
+  priorVotes: number = DEFAULT_RATING_PRIOR_VOTES,
 ): RatedCatalogItem[] {
   const mean = poolMeanRating(items);
   return items.map((item) => ({
@@ -142,7 +155,7 @@ export function applyWeightedRatings(
     weightedRating: weightedRating(
       item.voteAverage,
       item.voteCount,
-      minVotes,
+      priorVotes,
       mean,
     ),
   }));

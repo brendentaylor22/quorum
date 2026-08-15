@@ -67,9 +67,16 @@ services:
       # TMDB v4 read access token, read from the file so it never reaches the
       # process table, `docker inspect`, or a log line.
       TMDB_READ_ACCESS_TOKEN_FILE: /run/secrets/tmdb_read_access_token
-      QUORUM_CATALOG_MIN_VOTES: ${QUORUM_CATALOG_MIN_VOTES:-300}
+      # 600 votes keeps the catalog to films with a meaningful rating, and
+      # keeps the sweep under the item ceiling. Discovery runs newest-first, so
+      # exceeding the ceiling would drop the oldest cinema, not the least
+      # popular films; the report flags it as `cappedAtMaxItems` if it happens.
+      QUORUM_CATALOG_MIN_VOTES: ${QUORUM_CATALOG_MIN_VOTES:-600}
       QUORUM_CATALOG_FIRST_YEAR: ${QUORUM_CATALOG_FIRST_YEAR:-1930}
-      QUORUM_CATALOG_MAX_ITEMS: ${QUORUM_CATALOG_MAX_ITEMS:-20000}
+      QUORUM_CATALOG_MAX_ITEMS: ${QUORUM_CATALOG_MAX_ITEMS:-30000}
+      # Confidence threshold for the weighted rating, deliberately separate from
+      # the vote floor: too low and a hyped new release outranks a classic.
+      QUORUM_CATALOG_RATING_PRIOR: ${QUORUM_CATALOG_RATING_PRIOR:-3000}
       QUORUM_CATALOG_CONCURRENCY: ${QUORUM_CATALOG_CONCURRENCY:-12}
       QUORUM_CATALOG_REGIONS: ${QUORUM_CATALOG_REGIONS:-GB,US}
     secrets:
@@ -113,7 +120,7 @@ secrets:
   quorum_token_secret:
     file: ./secrets/token-secret
   tmdb_read_access_token:
-    file: ./secrets/tmdb-read-access-token
+    file: ./secrets/tmdb-read-access-token.secret
 
 volumes:
   quorum-data:

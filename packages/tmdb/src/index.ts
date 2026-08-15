@@ -41,6 +41,7 @@ export {
 } from './discover.js';
 
 export {
+  DEFAULT_RATING_PRIOR_VOTES,
   TMDB_PROVIDER,
   applyWeightedRatings,
   toCatalogItem,

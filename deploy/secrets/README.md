@@ -13,11 +13,11 @@ Create `tunnel-credentials.json` here with mode `0440`, owned by deployment admi
 
 ## TMDB credential
 
-Create `tmdb-read-access-token` holding the TMDB **v4 read access token** on a single line:
+Create `tmdb-read-access-token.secret` holding the TMDB **v4 read access token** on a single line:
 
 ```sh
-printf '%s' 'eyJhbGciOi...' > deploy/secrets/tmdb-read-access-token
-chmod 0400 deploy/secrets/tmdb-read-access-token
+printf '%s' 'eyJhbGciOi...' > deploy/secrets/tmdb-read-access-token.secret
+chmod 0400 deploy/secrets/tmdb-read-access-token.secret
 ```
 
 Only the `catalog-refresh` service reads it, and only from the file — never from a command argument or a plain environment variable, so it stays out of the process table and out of `docker inspect`. The serving application never receives it and has no route to TMDB.

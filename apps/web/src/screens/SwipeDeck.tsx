@@ -1,4 +1,4 @@
-import type { ExposureCard } from '@quorum/contracts';
+import type { CatalogItemDto, ExposureCard } from '@quorum/contracts';
 import { useEffect, useRef, useState } from 'react';
 
 interface SwipeDeckProps {
@@ -8,6 +8,35 @@ interface SwipeDeckProps {
 }
 
 const DRAG_THRESHOLD_PX = 90;
+
+/**
+ * Poster art, falling back to an initial tile when the catalog has no image
+ * for the film or the image fails to load. The URL is built by the server, so
+ * the client carries no knowledge of a provider's CDN.
+ */
+export function Poster({ item }: { item: CatalogItemDto }) {
+  const [failed, setFailed] = useState(false);
+  if (item.posterUrl === null || failed) {
+    return (
+      <div className="poster" aria-hidden="true">
+        {item.title.slice(0, 1)}
+      </div>
+    );
+  }
+  return (
+    <img
+      className="poster art"
+      src={item.posterUrl}
+      alt={`Poster for ${item.title}`}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onError={() => {
+        setFailed(true);
+      }}
+    />
+  );
+}
 
 /**
  * Swipe is one of three equal inputs: drag, the Yes/No buttons, and the arrow
@@ -67,9 +96,7 @@ export function SwipeDeck({ card, busy, onChoice }: SwipeDeckProps) {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <div className="poster" aria-hidden="true">
-          {card.item.title.slice(0, 1)}
-        </div>
+        <Poster item={card.item} />
         <h2>{card.item.title}</h2>
         <p className="meta">
           {[

@@ -198,6 +198,31 @@ input {
   place-items: center;
 }
 
+/* Real poster art replaces the initial tile; the frame stays the same size. */
+.card .poster.art {
+  width: 100%;
+  height: 16rem;
+  object-fit: cover;
+  /* The card is draggable, so the image must not start a native image drag. */
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.results .thumb {
+  display: block;
+}
+
+.results .thumb .poster {
+  width: 2.5rem;
+  height: 3.75rem;
+  border-radius: 0.25rem;
+  font-size: 1.1rem;
+}
+
+.results .thumb .poster.art {
+  object-fit: cover;
+}
+
 .card h2 {
   margin: 1rem 0 0.25rem;
   font-size: 1.35rem;
@@ -236,7 +261,8 @@ input {
 
 .results li {
   display: grid;
-  grid-template-columns: 2rem 1fr auto;
+  /* rank, poster thumbnail, title, score */
+  grid-template-columns: 2rem 2.5rem 1fr auto;
   gap: 0.5rem;
   align-items: center;
   padding: 0.6rem 0.75rem;
@@ -266,9 +292,17 @@ input {
 }
 
 .results .coverage {
-  grid-column: 2 / -1;
+  grid-column: 3 / -1;
   color: #8b8f9c;
   font-size: 0.8rem;
+}
+
+/* Why the recommender chose this film; absent on a top-rated slate. */
+.results .reason {
+  grid-column: 3 / -1;
+  color: #8b8f9c;
+  font-size: 0.8rem;
+  font-style: italic;
 }
 
 .badge {

@@ -7,7 +7,8 @@ import type { ImportOptions } from './importer.js';
  * well-evidenced movies rather than the whole of TMDB.
  */
 export const CATALOG_DEFAULTS = {
-  minVoteCount: 300,
+  minVoteCount: 600,
+  ratingPriorVotes: 3000,
   firstYear: 1930,
   concurrency: 12,
   maxItems: 20_000,
@@ -102,6 +103,11 @@ export function importOptionsFromEnvironment(
       environment.QUORUM_CATALOG_MIN_VOTES,
       CATALOG_DEFAULTS.minVoteCount,
       'QUORUM_CATALOG_MIN_VOTES',
+    ),
+    ratingPriorVotes: positiveInteger(
+      environment.QUORUM_CATALOG_RATING_PRIOR,
+      CATALOG_DEFAULTS.ratingPriorVotes,
+      'QUORUM_CATALOG_RATING_PRIOR',
     ),
     firstYear,
     lastYear,

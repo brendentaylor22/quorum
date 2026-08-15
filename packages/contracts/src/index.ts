@@ -69,7 +69,14 @@ export const catalogItemSchema = z.object({
   synopsis: z.string().nullable(),
   runtimeMinutes: z.number().int().nullable(),
   contentRating: z.string().nullable(),
+  /** Raw provider reference, kept for diagnostics. Not a URL. */
   posterRef: z.string().nullable(),
+  /**
+   * Ready-to-render poster URL on the provider's CDN, or null when the item
+   * has no poster or the catalog carries no image configuration. The server
+   * builds it so the client never has to know a provider's URL scheme.
+   */
+  posterUrl: z.url().nullable(),
 });
 export type CatalogItemDto = z.infer<typeof catalogItemSchema>;
 
@@ -207,6 +214,8 @@ export const catalogSourceSchema = z.object({
   version: z.string().nullable(),
   itemCount: z.number().int().nonnegative(),
   attribution: z.string().nullable(),
+  /** Provider CDN base for posters, or null when none is configured. */
+  imageBaseUrl: z.string().nullable(),
 });
 export type CatalogSource = z.infer<typeof catalogSourceSchema>;
 

@@ -39,6 +39,8 @@ The refresh container is short-lived and stopped in normal operation. The servin
 
    A raw average lets a 9.5 from twelve votes outrank a classic. This pulls thin records toward the pool mean until they have earned their score.
 
+   `m` is **not** the inclusion threshold — they answer different questions. Inclusion asks "is this film rated at all?"; ranking asks "do I trust this average against an all-time list?". Measured against the real 7,088-film catalog, a low `m` put three 2026 releases in the all-time top twelve, one of them on 2,098 votes. At `m = 3000` that inflation disappears and the head of the list is Shawshank, The Godfather, The Dark Knight. At `m = 8000` older classics start being over-penalised. Tunable via `QUORUM_CATALOG_RATING_PRIOR`.
+
 5. One transaction: upsert every row, relink taxonomy, flip `catalog_versions.is_current`, and set `active = (catalog_version = new)`.
 
 The entire network phase — the slow part — holds **no database lock**. Rows are only written once the whole catalog is known good, so a reader sees the old catalog right up until it sees the new one, never a mixture. A failure at any point before the commit leaves the previous catalog serving untouched.
@@ -58,21 +60,21 @@ docker compose --profile refresh run --rm catalog-refresh
 docker compose run --rm app node apps/api/dist/cli.js catalog-status
 ```
 
-A full first import of ~20,000 movies takes roughly 15–20 minutes, dominated by one detail call per movie at a deliberately polite ~20 req/s.
+A full first import of ~13,000 movies takes roughly 10–15 minutes, dominated by one detail call per movie at a deliberately polite ~20 req/s.
 
 ### Configuration
 
-| Variable                      | Default      | Meaning                                                    |
-| ----------------------------- | ------------ | ---------------------------------------------------------- |
-| `TMDB_READ_ACCESS_TOKEN_FILE` | —            | Path to the v4 read access token. Required.                |
-| `QUORUM_CATALOG_MIN_VOTES`    | `300`        | Vote floor. Below a few hundred, a rating is mostly noise. |
-| `QUORUM_CATALOG_FIRST_YEAR`   | `1930`       | Oldest release year swept.                                 |
-| `QUORUM_CATALOG_LAST_YEAR`    | current year | Newest release year swept.                                 |
-| `QUORUM_CATALOG_MAX_ITEMS`    | `20000`      | Ceiling on accepted items.                                 |
-| `QUORUM_CATALOG_CONCURRENCY`  | `12`         | Parallel detail fetches.                                   |
-| `QUORUM_CATALOG_LANGUAGES`    | any          | Comma-separated allowed original languages.                |
-| `QUORUM_CATALOG_REGIONS`      | `GB,US`      | Certification regions, in preference order.                |
-| `TMDB_BASE_URL`               | TMDB         | Test-only override for pointing at a local stub.           |
+| Variable                      | Default      | Meaning                                                                                                                          |
+| ----------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `TMDB_READ_ACCESS_TOKEN_FILE` | —            | Path to the v4 read access token. Required.                                                                                      |
+| `QUORUM_CATALOG_MIN_VOTES`    | `600`        | Vote floor. Below a few hundred, a rating is mostly noise.                                                                       |
+| `QUORUM_CATALOG_FIRST_YEAR`   | `1930`       | Oldest release year swept.                                                                                                       |
+| `QUORUM_CATALOG_LAST_YEAR`    | current year | Newest release year swept.                                                                                                       |
+| `QUORUM_CATALOG_MAX_ITEMS`    | `30000`      | Ceiling on accepted items. Discovery is newest-first, so hitting it drops the oldest films; the report flags `cappedAtMaxItems`. |
+| `QUORUM_CATALOG_CONCURRENCY`  | `12`         | Parallel detail fetches.                                                                                                         |
+| `QUORUM_CATALOG_LANGUAGES`    | any          | Comma-separated allowed original languages.                                                                                      |
+| `QUORUM_CATALOG_REGIONS`      | `GB,US`      | Certification regions, in preference order.                                                                                      |
+| `TMDB_BASE_URL`               | TMDB         | Test-only override for pointing at a local stub.                                                                                 |
 
 ## Do not refresh on startup
 
@@ -90,7 +92,7 @@ Reviewed in [`docs/phase-0/tmdb-use-review.md`](../phase-0/tmdb-use-review.md). 
 
 - **Credential handling.** Read from a file into a bearer header. It never reaches a URL, so it cannot leak through a log line, proxy record, or error message. `redactUrl` masks secret-shaped query parameters defensively. Tests assert the token appears in neither the request URL nor the retry callback.
 - **Attribution.** `GET /api/catalog` returns the provider actually installed and the notice it requires; the client renders that rather than a hard-coded string, so a fixture build never claims to be showing TMDB data. The footer carries the notice and links to themoviedb.org.
-- **Images from the TMDB CDN.** Only `poster_path` is stored. URLs are built from `/configuration` at render time; posters are never mirrored.
+- **Images from the TMDB CDN.** Only `poster_path` is stored, never the image itself. The importer records `secure_base_url` and a bounded poster size from `/configuration` onto the catalog version, because the serving application has no egress and cannot ask. The server then hands the client a finished URL, so posters always come from TMDB and the client holds no provider URL scheme. If `/configuration` is unavailable the import still succeeds and the UI falls back to a placeholder tile.
 - **Rate limits.** Token bucket at ~20 req/s with `Retry-After` honoured and full-jitter backoff.
 - **Six-month cache maximum.** `purgeRetiredCatalogItems` deletes retired provider content older than `TMDB_CACHE_MAX_DAYS` (180) that no room references, and it runs at the end of every refresh. `catalog-status` exits non-zero once the current catalog passes the limit, so a stale install fails loudly instead of quietly breaching the terms.
 - **Non-commercial only.** Any revenue, advertising, or business use stops import until written permission exists.

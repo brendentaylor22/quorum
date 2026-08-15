@@ -4,7 +4,12 @@ import {
   openDatabase,
   type QuorumDatabase,
 } from '@quorum/database';
-import { TmdbClient, type FetchLike } from '@quorum/tmdb';
+import {
+  TmdbClient,
+  applyWeightedRatings,
+  type FetchLike,
+  type TmdbCatalogItem,
+} from '@quorum/tmdb';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +35,38 @@ import {
 
 /** Older than the provider cache limit relative to the tests' fixed "now". */
 const OLD = '2025-01-01T00:00:00.000Z';
+
+/** A mapped TMDB item with a chosen average and vote count. */
+function detailItem(
+  reference: string,
+  voteAverage: number,
+  voteCount: number,
+): TmdbCatalogItem {
+  return {
+    provider: 'tmdb',
+    providerRef: reference,
+    mediaType: 'MOVIE',
+    title: reference,
+    releaseYear: 2000,
+    synopsis: 'Something happens.',
+    runtimeMinutes: 100,
+    contentRating: '15',
+    language: 'en',
+    posterRef: `/${reference}.jpg`,
+    catalogVersion: 'v1',
+    sourceFetchedAt: '2026-08-15T00:00:00.000Z',
+    tmdbId: 1,
+    imdbId: null,
+    originalLanguage: 'en',
+    voteAverage,
+    voteCount,
+    popularity: 1,
+    genres: [],
+    keywords: [],
+    directors: [],
+    topCast: [],
+  };
+}
 
 const databases: QuorumDatabase[] = [];
 
@@ -235,6 +272,41 @@ describe('fixture seeding', () => {
   });
 });
 
+describe('rating prior', () => {
+  it('keeps a hyped new release out of an all-time top slot', () => {
+    // A fresh film with a stellar average on few votes, against a classic
+    // with a slightly lower average on far more.
+    const items = [
+      detailItem('hyped', 8.9, 2000),
+      detailItem('classic', 8.6, 25000),
+      ...Array.from({ length: 20 }, (_, index) =>
+        detailItem(`filler${index.toString()}`, 6.5, 5000),
+      ),
+    ];
+    const ranked = applyWeightedRatings(
+      items,
+      CATALOG_DEFAULTS.ratingPriorVotes,
+    );
+    const hyped = ranked.find((entry) => entry.providerRef === 'hyped');
+    const classic = ranked.find((entry) => entry.providerRef === 'classic');
+    expect(classic?.weightedRating).toBeGreaterThan(hyped?.weightedRating ?? 0);
+  });
+
+  it('a low prior lets the hyped release win, which is why it is separate', () => {
+    const items = [
+      detailItem('hyped', 8.9, 2000),
+      detailItem('classic', 8.6, 25000),
+      ...Array.from({ length: 20 }, (_, index) =>
+        detailItem(`filler${index.toString()}`, 6.5, 5000),
+      ),
+    ];
+    const ranked = applyWeightedRatings(items, 300);
+    const hyped = ranked.find((entry) => entry.providerRef === 'hyped');
+    const classic = ranked.find((entry) => entry.providerRef === 'classic');
+    expect(hyped?.weightedRating).toBeGreaterThan(classic?.weightedRating ?? 0);
+  });
+});
+
 describe('provider cache limit', () => {
   it('deletes retired content past the limit', () => {
     const database = freshDatabase();
@@ -338,6 +410,7 @@ describe('0003 upgrade path', () => {
     expect(migrate(database, migrationsDirectory)).toEqual([
       '0003_catalog_ranking.sql',
       '0004_rounds.sql',
+      '0005_catalog_images.sql',
     ]);
 
     const status = catalogStatus(database);
@@ -527,6 +600,7 @@ describe('importTmdbCatalog', () => {
       rejected: 0,
       failed: 0,
       purged: 0,
+      cappedAtMaxItems: false,
     });
     expect(catalogStatus(database).activeItems).toBe(3);
 
@@ -594,6 +668,8 @@ describe('importTmdbCatalog', () => {
     });
     expect(report.accepted).toBeLessThanOrEqual(4);
     expect(report.accepted).toBeGreaterThan(0);
+    // Hitting the ceiling drops the oldest films, so it must be visible.
+    expect(report.cappedAtMaxItems).toBe(true);
   });
 
   it('reports progress as it goes', async () => {
@@ -649,6 +725,7 @@ describe('importOptionsFromEnvironment', () => {
   it('defaults to a bounded, quality-gated sweep', () => {
     expect(importOptionsFromEnvironment({}, now)).toMatchObject({
       minVoteCount: CATALOG_DEFAULTS.minVoteCount,
+      ratingPriorVotes: CATALOG_DEFAULTS.ratingPriorVotes,
       firstYear: CATALOG_DEFAULTS.firstYear,
       lastYear: 2026,
       concurrency: CATALOG_DEFAULTS.concurrency,
@@ -676,6 +753,7 @@ describe('importOptionsFromEnvironment', () => {
       ),
     ).toEqual({
       minVoteCount: 1000,
+      ratingPriorVotes: CATALOG_DEFAULTS.ratingPriorVotes,
       firstYear: 1970,
       lastYear: 2000,
       concurrency: 4,

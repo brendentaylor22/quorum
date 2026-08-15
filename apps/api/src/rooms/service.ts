@@ -19,7 +19,7 @@ import {
   type Judgement,
 } from '@quorum/recommend';
 import { catalogFeatures } from '../catalog/features.js';
-import { TMDB_ATTRIBUTION, TMDB_PROVIDER } from '@quorum/tmdb';
+import { TMDB_ATTRIBUTION, TMDB_PROVIDER, posterUrl } from '@quorum/tmdb';
 import { catalogStatus } from '../catalog/repository.js';
 import {
   hashCapability,
@@ -91,6 +91,12 @@ export class RoomService {
   private readonly database: QuorumDatabase;
   private readonly secret: Buffer;
   private readonly clock: () => Date;
+  private imageConfigCache:
+    | {
+        version: string | null;
+        value: { baseUrl: string; size: string } | null;
+      }
+    | undefined;
 
   constructor(options: RoomServiceOptions) {
     this.database = options.database;
@@ -112,7 +118,29 @@ export class RoomService {
       version: status.current?.version ?? null,
       itemCount: status.activeItems,
       attribution: provider === TMDB_PROVIDER ? TMDB_ATTRIBUTION : null,
+      imageBaseUrl: status.current?.imageBaseUrl ?? null,
     };
+  }
+
+  /**
+   * Poster delivery details for the installed catalog, memoised per catalog
+   * version. Every card and every result row needs them, and they only change
+   * when a new catalog is installed.
+   */
+  private imageConfig(): { baseUrl: string; size: string } | null {
+    const status = catalogStatus(this.database);
+    const version = status.current?.version ?? null;
+    if (this.imageConfigCache?.version !== version) {
+      const baseUrl = status.current?.imageBaseUrl ?? null;
+      this.imageConfigCache = {
+        version,
+        value:
+          baseUrl === null
+            ? null
+            : { baseUrl, size: status.current?.posterSize ?? 'w500' },
+      };
+    }
+    return this.imageConfigCache.value;
   }
 
   /**
@@ -574,6 +602,7 @@ export class RoomService {
   }
 
   private toCatalogItem(item: SlateItemRow): CatalogItemDto {
+    const images = this.imageConfig();
     return {
       catalogItemId: item.providerRef,
       title: item.title,
@@ -582,6 +611,15 @@ export class RoomService {
       runtimeMinutes: item.runtimeMinutes,
       contentRating: item.contentRating,
       posterRef: item.imageRef,
+      // A fixture reference is not a provider path, so it yields no URL and
+      // the client falls back to its placeholder tile.
+      posterUrl:
+        images === null || item.imageRef?.startsWith('/') !== true
+          ? null
+          : posterUrl(item.imageRef, {
+              baseUrl: images.baseUrl,
+              size: images.size,
+            }),
     };
   }
 

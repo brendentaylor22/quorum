@@ -4,6 +4,7 @@ import {
   applyWeightedRatings,
   discoverMovies,
   poolMeanRating,
+  preferredPosterSize,
   toCatalogItem,
   type RejectionReason,
   type SliceReport,
@@ -23,9 +24,21 @@ export interface ImportOptions {
   originalLanguage?: string | undefined;
   allowedLanguages?: readonly string[] | undefined;
   certificationRegions?: readonly string[] | undefined;
+  /**
+   * Confidence threshold for the weighted rating. Separate from
+   * `minVoteCount`: inclusion and ranking are different questions, and a low
+   * value here lets a hyped new release outrank an all-time classic.
+   */
+  ratingPriorVotes?: number | undefined;
   /** Parallel detail fetches. The client's rate limiter is the real throttle. */
   concurrency: number;
-  /** Stop after this many usable items. Guards an unbounded first import. */
+  /**
+   * Stop after this many usable items. Guards an unbounded first import.
+   *
+   * Discovery runs newest year first, so hitting this cap drops the *oldest*
+   * films rather than the least popular ones. `cappedAtMaxItems` in the report
+   * says when that happened, so a truncated catalog is never silent.
+   */
   maxItems: number;
   signal?: AbortSignal | undefined;
   now?: () => Date;
@@ -49,10 +62,18 @@ export interface ImportReport {
   rejected: number;
   failed: number;
   poolMeanRating: number;
+  /** Poster CDN base and size recorded for the client. */
+  imageBaseUrl: string | null;
+  posterSize: string | null;
   rejections: Record<string, number>;
   truncatedYears: number[];
   /** Retired provider rows deleted under the cache limit. */
   purged: number;
+  /**
+   * True when the import stopped on `maxItems` rather than exhausting the
+   * year range, meaning the oldest part of the catalog was never reached.
+   */
+  cappedAtMaxItems: boolean;
   startedAt: string;
   completedAt: string;
 }
@@ -108,6 +129,18 @@ export async function importTmdbCatalog(
       ? {}
       : { certificationRegions: options.certificationRegions }),
   };
+
+  // Poster delivery details, captured while egress is available. A failure
+  // here must not lose an import: posters fall back to a placeholder tile.
+  let imageBaseUrl: string | null = null;
+  let posterSize: string | null = null;
+  try {
+    const configuration = await client.configuration(options.signal);
+    imageBaseUrl = configuration.images.secure_base_url;
+    posterSize = preferredPosterSize(configuration);
+  } catch {
+    // Leave both null; the client falls back to a placeholder tile.
+  }
 
   const ids = discoverMovies(client, {
     minVoteCount: options.minVoteCount,
@@ -173,7 +206,7 @@ export async function importTmdbCatalog(
 
   report('commit');
   const completedAt = clock().toISOString();
-  const ranked = applyWeightedRatings(accepted, options.minVoteCount);
+  const ranked = applyWeightedRatings(accepted, options.ratingPriorVotes);
   commitCatalogVersion(database, {
     version,
     provider: TMDB_PROVIDER,
@@ -181,6 +214,8 @@ export async function importTmdbCatalog(
     poolMeanRating: poolMeanRating(accepted),
     startedAt,
     completedAt,
+    imageBaseUrl,
+    posterSize,
     items: ranked,
   });
   // Retiring a row is not enough to satisfy the provider's cache limit; content
@@ -198,9 +233,12 @@ export async function importTmdbCatalog(
     rejected: countRejections(rejections),
     failed,
     poolMeanRating: poolMeanRating(accepted),
+    imageBaseUrl,
+    posterSize,
     rejections: Object.fromEntries(rejections),
     truncatedYears,
     purged,
+    cappedAtMaxItems: accepted.length >= options.maxItems,
     startedAt,
     completedAt,
   };

@@ -151,6 +151,86 @@ function voteRound(
   }
 }
 
+describe('poster URLs', () => {
+  function withImages(base: string | null): {
+    service: RoomService;
+    database: QuorumDatabase;
+  } {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-poster-'));
+    const database = openDatabase(join(directory, 'quorum.db'));
+    migrate(database, migrationsDirectory);
+    databases.push(database);
+    commitCatalogVersion(database, {
+      version: 'v1',
+      provider: 'tmdb',
+      minVoteCount: 300,
+      poolMeanRating: 7,
+      startedAt: '2026-08-15T00:00:00.000Z',
+      completedAt: '2026-08-15T00:00:00.000Z',
+      imageBaseUrl: base,
+      posterSize: 'w500',
+      items: Array.from({ length: 40 }, (_, index) => catalogItem(index)),
+    });
+    return {
+      service: new RoomService({ database, secret: Buffer.alloc(32, 3) }),
+      database,
+    };
+  }
+
+  it('builds a CDN URL from the stored path and image configuration', () => {
+    const { service, database } = withImages('https://image.tmdb.org/t/p/');
+    const { created, players } = openRoom(service, database);
+    service.start(created.roomId, created.hostToken);
+    const room = must(
+      repository.findRoomByPublicId(database, created.roomId),
+      'room',
+    );
+    const view = service.view(room, {
+      participant: must(players[0], 'host').row,
+      isHost: true,
+    });
+    expect(view.card?.item.posterUrl).toMatch(
+      /^https:\/\/image\.tmdb\.org\/t\/p\/w500\/m\d+\.jpg$/u,
+    );
+    // The raw reference stays available and is never a URL.
+    expect(view.card?.item.posterRef).toMatch(/^\/m\d+\.jpg$/u);
+  });
+
+  it('yields no URL when the catalog carries no image configuration', () => {
+    const { service, database } = withImages(null);
+    const { created, players } = openRoom(service, database);
+    service.start(created.roomId, created.hostToken);
+    const room = must(
+      repository.findRoomByPublicId(database, created.roomId),
+      'room',
+    );
+    const view = service.view(room, {
+      participant: must(players[0], 'host').row,
+      isHost: true,
+    });
+    expect(view.card?.item.posterUrl).toBeNull();
+  });
+
+  it('never fabricates a URL for a fixture reference', () => {
+    const { service, database } = withImages('https://image.tmdb.org/t/p/');
+    // A fixture-style reference is not a provider path.
+    database
+      .prepare("UPDATE catalog_items SET image_ref = 'fixture://poster/01'")
+      .run();
+    const { created, players } = openRoom(service, database);
+    service.start(created.roomId, created.hostToken);
+    const room = must(
+      repository.findRoomByPublicId(database, created.roomId),
+      'room',
+    );
+    const view = service.view(room, {
+      participant: must(players[0], 'host').row,
+      isHost: true,
+    });
+    expect(view.card?.item.posterUrl).toBeNull();
+  });
+});
+
 describe('multi-round rooms', () => {
   it('runs round one from the top-rated pool', () => {
     const { service, database } = setup();
