@@ -198,11 +198,18 @@ input {
   place-items: center;
 }
 
-/* Real poster art replaces the initial tile; the frame stays the same size. */
+/*
+ * Real poster art replaces the initial tile. Posters are 2:3, so cropping to
+ * a fixed frame cuts off the artwork; bound the height instead and let the
+ * width follow, which shows the whole poster at any screen size.
+ */
 .card .poster.art {
-  width: 100%;
-  height: 16rem;
-  object-fit: cover;
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: 17rem;
+  margin-inline: auto;
+  object-fit: contain;
   /* The card is draggable, so the image must not start a native image drag. */
   -webkit-user-drag: none;
   user-select: none;
@@ -262,7 +269,7 @@ input {
 .results li {
   display: grid;
   /* rank, poster thumbnail, title, score */
-  grid-template-columns: 2rem 2.5rem 1fr auto;
+  grid-template-columns: 1.75rem 2.5rem minmax(0, 1fr) auto;
   gap: 0.5rem;
   align-items: center;
   padding: 0.6rem 0.75rem;
@@ -282,8 +289,24 @@ input {
 
 .results .title {
   display: flex;
-  gap: 0.5rem;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
   align-items: center;
+}
+
+/*
+ * On a narrow phone the score cannot share a line with a long title and a
+ * badge without both wrapping badly; give it its own row instead.
+ */
+@media (width <= 26rem) {
+  .results li {
+    grid-template-columns: 1.75rem 2.5rem minmax(0, 1fr);
+  }
+
+  .results .score {
+    grid-column: 3 / -1;
+  }
 }
 
 .results .score {

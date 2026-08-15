@@ -14,7 +14,14 @@ const DRAG_THRESHOLD_PX = 90;
  * for the film or the image fails to load. The URL is built by the server, so
  * the client carries no knowledge of a provider's CDN.
  */
-export function Poster({ item }: { item: CatalogItemDto }) {
+export function Poster({
+  item,
+  eager = false,
+}: {
+  item: CatalogItemDto;
+  /** The card's poster is the primary content and must not be lazy. */
+  eager?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   if (item.posterUrl === null || failed) {
     return (
@@ -28,7 +35,7 @@ export function Poster({ item }: { item: CatalogItemDto }) {
       className="poster art"
       src={item.posterUrl}
       alt={`Poster for ${item.title}`}
-      loading="lazy"
+      loading={eager ? 'eager' : 'lazy'}
       decoding="async"
       draggable={false}
       onError={() => {
@@ -96,7 +103,7 @@ export function SwipeDeck({ card, busy, onChoice }: SwipeDeckProps) {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <Poster item={card.item} />
+        <Poster item={card.item} eager />
         <h2>{card.item.title}</h2>
         <p className="meta">
           {[
