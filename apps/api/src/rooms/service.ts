@@ -1,8 +1,10 @@
 import { loadFixtureCatalog, selectSlate } from '@quorum/catalog';
 import {
   MAX_PARTICIPANTS_PER_ROOM,
+  SLATE_CANDIDATE_POOL_SIZE,
   SLATE_SIZE,
   type CatalogItemDto,
+  type CatalogSource,
   type Choice,
   type ErrorCode,
   type ParticipantSummary,
@@ -11,6 +13,8 @@ import {
 } from '@quorum/contracts';
 import type { QuorumDatabase } from '@quorum/database';
 import { rankSlate } from '@quorum/ranking';
+import { TMDB_ATTRIBUTION, TMDB_PROVIDER } from '@quorum/tmdb';
+import { catalogStatus } from '../catalog/repository.js';
 import {
   hashCapability,
   issueCapability,
@@ -80,6 +84,23 @@ export class RoomService {
     this.database = options.database;
     this.secret = options.secret;
     this.clock = options.now ?? (() => new Date());
+  }
+
+  /**
+   * Describe the installed catalog. The attribution string is chosen from the
+   * provider that actually produced the rows, so a fixture build never claims
+   * to be showing TMDB data and a TMDB build always carries the required
+   * notice.
+   */
+  catalogSource(): CatalogSource {
+    const status = catalogStatus(this.database);
+    const provider = status.current?.provider ?? null;
+    return {
+      provider,
+      version: status.current?.version ?? null,
+      itemCount: status.activeItems,
+      attribution: provider === TMDB_PROVIDER ? TMDB_ATTRIBUTION : null,
+    };
   }
 
   /** Load the fixture catalog snapshot. Phase 4 replaces the source only. */
@@ -278,7 +299,7 @@ export class RoomService {
       slateSeed: seed,
       catalogVersion: version,
       catalogItemIds: selectSlate(
-        repository.listCatalogIds(this.database),
+        repository.listTopCatalogIds(this.database, SLATE_CANDIDATE_POOL_SIZE),
         SLATE_SIZE,
         seed,
       ),

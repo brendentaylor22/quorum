@@ -1,4 +1,5 @@
 import type {
+  CatalogSource,
   CreateRoomResponse,
   ErrorCode,
   ResultsResponse,
@@ -67,6 +68,9 @@ async function request<T>(
 }
 
 export const api = {
+  catalogSource: async (): Promise<CatalogSource> =>
+    request<CatalogSource>('/api/catalog'),
+
   createRoom: async (): Promise<CreateRoomResponse> =>
     request<CreateRoomResponse>('/api/rooms', { method: 'POST', body: {} }),
 

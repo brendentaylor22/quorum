@@ -13,6 +13,7 @@ COPY packages/catalog/package.json packages/catalog/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/ranking/package.json packages/ranking/package.json
+COPY packages/tmdb/package.json packages/tmdb/package.json
 RUN npm ci
 COPY tsconfig.base.json eslint.config.mjs .prettierrc.json vitest.config.ts ./
 COPY apps apps
@@ -50,7 +51,10 @@ COPY --from=build --chown=root:root /build/packages/ranking/dist ./packages/rank
 COPY --from=build --chown=root:root /build/packages/database/package.json ./packages/database/package.json
 COPY --from=build --chown=root:root /build/packages/database/dist ./packages/database/dist
 COPY --from=build --chown=root:root /build/packages/database/migrations ./packages/database/migrations
-# The fixture catalog is the Phase 2 movie source; Phase 4 replaces it with TMDB.
+COPY --from=build --chown=root:root /build/packages/tmdb/package.json ./packages/tmdb/package.json
+COPY --from=build --chown=root:root /build/packages/tmdb/dist ./packages/tmdb/dist
+# The fixture catalog is the offline/dev movie source; `quorumctl catalog-refresh`
+# replaces it with a real TMDB import.
 COPY --from=build --chown=root:root /build/fixtures ./fixtures
 USER 10001:10001
 EXPOSE 3000

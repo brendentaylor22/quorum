@@ -39,6 +39,46 @@ services:
       retries: 5
       start_period: 15s
 
+  # Operator-triggered catalog import. This is the only part of the system that
+  # reaches the Internet, so it runs as its own short-lived container on its own
+  # egress network and never joins `quorum-edge`. The serving application keeps
+  # zero outbound route.
+  #
+  #   docker compose --profile refresh run --rm catalog-refresh
+  catalog-refresh:
+    image: ${QUORUM_IMAGE:?Set QUORUM_IMAGE to an immutable GHCR image digest}
+    profiles:
+      - refresh
+    restart: 'no'
+    init: true
+    user: '10001:10001'
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    command: ['node', 'apps/api/dist/cli.js', 'catalog-refresh']
+    environment:
+      # TMDB v4 read access token, read from the file so it never reaches the
+      # process table, `docker inspect`, or a log line.
+      TMDB_READ_ACCESS_TOKEN_FILE: /run/secrets/tmdb_read_access_token
+      QUORUM_CATALOG_MIN_VOTES: ${QUORUM_CATALOG_MIN_VOTES:-300}
+      QUORUM_CATALOG_FIRST_YEAR: ${QUORUM_CATALOG_FIRST_YEAR:-1930}
+      QUORUM_CATALOG_MAX_ITEMS: ${QUORUM_CATALOG_MAX_ITEMS:-20000}
+      QUORUM_CATALOG_CONCURRENCY: ${QUORUM_CATALOG_CONCURRENCY:-12}
+      QUORUM_CATALOG_REGIONS: ${QUORUM_CATALOG_REGIONS:-GB,US}
+    secrets:
+      - tmdb_read_access_token
+    volumes:
+      - quorum-data:/data
+    networks:
+      - catalog-egress
+
   cloudflared:
     image: cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
     profiles:
@@ -72,6 +112,8 @@ services:
 secrets:
   quorum_token_secret:
     file: ./secrets/token-secret
+  tmdb_read_access_token:
+    file: ./secrets/tmdb-read-access-token
 
 volumes:
   quorum-data:
@@ -83,3 +125,7 @@ networks:
     internal: true
   tunnel-egress:
     name: quorum-tunnel-egress
+  # Only the catalog importer joins this. Keeping it separate from
+  # `quorum-edge` is what preserves "the application cannot reach the Internet".
+  catalog-egress:
+    name: quorum-catalog-egress

@@ -20,6 +20,7 @@ describe('database operations', () => {
     expect(migrate(database, migrationsDirectory)).toEqual([
       '0001_foundation.sql',
       '0002_room_model.sql',
+      '0003_catalog_ranking.sql',
     ]);
     expect(migrate(database, migrationsDirectory)).toEqual([]);
     database

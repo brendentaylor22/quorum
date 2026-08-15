@@ -108,6 +108,13 @@ export function registerRoomRoutes(
     return reply.code(500).send(body);
   });
 
+  /**
+   * Where movie metadata came from, including the notice the provider requires
+   * be displayed. Public and unauthenticated: it describes the catalog, not any
+   * room, and carries nothing room-scoped.
+   */
+  app.get('/api/catalog', () => service.catalogSource());
+
   app.post('/api/rooms', (request, reply) => {
     requireSameOrigin(request);
     const created = service.createRoom();

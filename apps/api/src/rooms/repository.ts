@@ -1,6 +1,10 @@
 import type { CatalogItem } from '@quorum/catalog';
 import type { RoomState } from '@quorum/contracts';
 import type { QuorumDatabase } from '@quorum/database';
+import {
+  commitCatalogVersion,
+  unrankedWriteItem,
+} from '../catalog/repository.js';
 
 export interface RoomRow {
   id: number;
@@ -87,64 +91,58 @@ function toRoom(row: RawRoom | undefined): RoomRow | undefined {
 const roomColumns = `id, public_id, state, catalog_version, slate_seed,
   eligible_count, closed_early, created_at, started_at, completed_at, expires_at`;
 
-/** Idempotently load the catalog snapshot used to build slates. */
+/**
+ * Idempotently load a fixture catalog snapshot. The fixture carries no vote
+ * data, so every item ranks equally and the candidate pool falls back to
+ * stable id order.
+ */
 export function importCatalog(
   database: QuorumDatabase,
   items: readonly CatalogItem[],
   now: string,
 ): number {
-  const insert = database.prepare(
-    `INSERT INTO catalog_items (
-       provider, provider_ref, media_type, title, release_year, synopsis,
-       runtime_minutes, content_rating, language, image_ref, catalog_version,
-       source_fetched_at, imported_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (provider, provider_ref) DO UPDATE SET
-       title = excluded.title,
-       release_year = excluded.release_year,
-       synopsis = excluded.synopsis,
-       runtime_minutes = excluded.runtime_minutes,
-       content_rating = excluded.content_rating,
-       language = excluded.language,
-       image_ref = excluded.image_ref,
-       catalog_version = excluded.catalog_version,
-       source_fetched_at = excluded.source_fetched_at`,
-  );
-  return database.transaction(() => {
-    for (const item of items) {
-      insert.run(
-        item.provider,
-        item.providerRef,
-        item.mediaType,
-        item.title,
-        item.releaseYear,
-        item.synopsis,
-        item.runtimeMinutes,
-        item.contentRating,
-        item.language,
-        item.posterRef,
-        item.catalogVersion,
-        item.sourceFetchedAt,
-        now,
-      );
-    }
-    return items.length;
-  })();
+  const first = items[0];
+  if (first === undefined) throw new Error('Catalog import received no items');
+  return commitCatalogVersion(database, {
+    version: first.catalogVersion,
+    provider: first.provider,
+    minVoteCount: 0,
+    poolMeanRating: 0,
+    startedAt: now,
+    completedAt: now,
+    items: items.map(unrankedWriteItem),
+  });
 }
 
-export function listCatalogIds(database: QuorumDatabase): number[] {
+/**
+ * Candidate pool for a slate: the best-rated active items, capped so a room
+ * draws from "top movies" rather than the whole catalog.
+ *
+ * Ordering by `weighted_rating` then `id` keeps the pool deterministic, which
+ * is what makes a persisted slate seed reproducible.
+ */
+export function listTopCatalogIds(
+  database: QuorumDatabase,
+  poolSize: number,
+): number[] {
+  if (!Number.isInteger(poolSize) || poolSize < 1) {
+    throw new Error('Candidate pool size must be a positive integer');
+  }
   return (
-    database.prepare('SELECT id FROM catalog_items ORDER BY id').all() as {
-      id: number;
-    }[]
+    database
+      .prepare(
+        `SELECT id FROM catalog_items
+          WHERE active = 1
+          ORDER BY weighted_rating DESC, id
+          LIMIT ?`,
+      )
+      .all(poolSize) as { id: number }[]
   ).map((row) => row.id);
 }
 
 export function catalogVersion(database: QuorumDatabase): string | null {
   const row = database
-    .prepare(
-      'SELECT catalog_version AS version FROM catalog_items ORDER BY id LIMIT 1',
-    )
+    .prepare('SELECT version FROM catalog_versions WHERE is_current = 1')
     .get() as { version: string } | undefined;
   return row?.version ?? null;
 }

@@ -2,6 +2,7 @@ import {
   HOST_TOKEN_HEADER,
   REQUEST_HEADER,
   sessionCookieName,
+  type CatalogSource,
   type CreateRoomResponse,
   type ResultsResponse,
   type RoomView,
@@ -157,6 +158,19 @@ async function results(
   expect(response.statusCode).toBe(200);
   return response.json<ResultsResponse>();
 }
+
+describe('catalog source', () => {
+  it('describes the installed catalog without claiming the wrong provider', async () => {
+    const app = await createApp();
+    const response = await app.inject({ method: 'GET', url: '/api/catalog' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json<CatalogSource>();
+    expect(body.provider).toBe('synthetic');
+    expect(body.itemCount).toBeGreaterThanOrEqual(20);
+    // A fixture build must not display the TMDB notice.
+    expect(body.attribution).toBeNull();
+  });
+});
 
 describe('room lifecycle', () => {
   it('issues separate unguessable invite and host capabilities', async () => {

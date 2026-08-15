@@ -2,6 +2,12 @@ import { z } from 'zod';
 
 /** Exactly 20 movies per room, per the product contract. */
 export const SLATE_SIZE = 20;
+/**
+ * A room's 20 are drawn at random from the best-rated slice of the catalog,
+ * not from the whole of it. Wide enough that two rooms rarely collide, narrow
+ * enough that everything in it is plausibly a "top movie of all time".
+ */
+export const SLATE_CANDIDATE_POOL_SIZE = 500;
 /** Hard cap from `docs/phase-0/retention-and-abuse.md`. */
 export const MAX_PARTICIPANTS_PER_ROOM = 20;
 export const DISPLAY_NAME_MAX_LENGTH = 40;
@@ -164,6 +170,19 @@ export const resultsResponseSchema = z.object({
   items: z.array(rankedItemSchema),
 });
 export type ResultsResponse = z.infer<typeof resultsResponseSchema>;
+
+/**
+ * Public description of where movie metadata came from. Carries the notice the
+ * provider requires, so the client never has to hard-code an attribution that
+ * could drift out of step with the actual source.
+ */
+export const catalogSourceSchema = z.object({
+  provider: z.string().nullable(),
+  version: z.string().nullable(),
+  itemCount: z.number().int().nonnegative(),
+  attribution: z.string().nullable(),
+});
+export type CatalogSource = z.infer<typeof catalogSourceSchema>;
 
 /**
  * Uniform error envelope. Invalid, expired, and unauthorized private links all
