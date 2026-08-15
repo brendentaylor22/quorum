@@ -3,6 +3,7 @@
 // SQLite file under .data. Nothing here runs in production images.
 import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { dirname, resolve } from 'node:path';
 
 const apiPort = process.env.QUORUM_API_PORT ?? '3000';
@@ -53,4 +54,16 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
+// Addresses other devices on the same network can reach. Vite binds every
+// interface, so any of these serve the app and proxy /api back to Fastify.
+function lanAddresses() {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal)
+    .map((entry) => entry.address);
+}
+
 console.log(`Quorum development server: http://localhost:${webPort}`);
+for (const address of lanAddresses()) {
+  console.log(`  on this network:          http://${address}:${webPort}`);
+}

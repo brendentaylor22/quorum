@@ -10,6 +10,11 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.QUORUM_WEB_PORT ?? 5173),
+    // Bind every interface so phones on the same WAN can open the invite
+    // link. The API stays on loopback and is reached through the proxy below.
+    host: process.env.QUORUM_WEB_HOST ?? '0.0.0.0',
+    // Vite blocks unknown Host headers by default; LAN IPs are fine here.
+    allowedHosts: true,
     // Capability paths are served by the SPA; only /api reaches Fastify.
     proxy: {
       '/api': {
