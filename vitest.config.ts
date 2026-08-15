@@ -12,6 +12,7 @@ export default defineConfig({
         'packages/contracts/src/**/*.ts',
         'packages/database/src/**/*.ts',
         'packages/ranking/src/**/*.ts',
+        'packages/recommend/src/**/*.ts',
         'packages/tmdb/src/**/*.ts',
       ],
       exclude: ['**/*.test.ts', '**/main.ts', '**/cli.ts'],

@@ -33,6 +33,11 @@ export function RoomScreen({ roomId }: { roomId: string }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // A new round reopens voting, so last round's results must clear.
+  useEffect(() => {
+    if (room?.state === 'VOTING' && results !== null) setResults(null);
+  }, [results, room?.state]);
+
   useEffect(() => {
     if (room?.state !== 'COMPLETE' || results !== null) return;
     void api
@@ -98,7 +103,12 @@ export function RoomScreen({ roomId }: { roomId: string }) {
         </section>
       ) : null}
       {room.state === 'VOTING' && room.card !== null ? (
-        <SwipeDeck card={room.card} busy={busy} onChoice={onChoice} />
+        <>
+          {room.round !== null && room.round.roundNumber > 1 ? (
+            <p className="hint">Round {room.round.roundNumber}</p>
+          ) : null}
+          <SwipeDeck card={room.card} busy={busy} onChoice={onChoice} />
+        </>
       ) : null}
       {room.state === 'VOTING' && room.card === null ? (
         <section>
@@ -107,6 +117,11 @@ export function RoomScreen({ roomId }: { roomId: string }) {
             Results appear when everyone finishes or the host closes voting.
           </p>
         </section>
+      ) : null}
+      {room.state === 'COMPLETE' && room.completedRounds.length > 0 ? (
+        <p className="hint">
+          The host can start another round of 20 from what the group liked.
+        </p>
       ) : null}
       {results === null ? null : <Results results={results} />}
       <Participants room={room} />

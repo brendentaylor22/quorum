@@ -107,6 +107,55 @@ test('four isolated participants complete a room and see one ranking', async ({
   }
 });
 
+test('the host can keep voting with a recommended second round', async ({
+  browser,
+  page,
+}) => {
+  const { invitePath, hostPath } = await createRoom(page);
+  const ana = await joinAs(browser, invitePath, 'Ana');
+  const bo = await joinAs(browser, invitePath, 'Bo');
+
+  const host = await browser.newPage();
+  await host.goto(hostPath);
+  await host.getByRole('button', { name: /Start voting/u }).click();
+
+  // A consistent taste, so round two has something to work from.
+  await voteThroughSlate(ana, (position) => (position <= 8 ? 'Yes' : 'No'));
+  await voteThroughSlate(bo, (position) => (position <= 8 ? 'Yes' : 'No'));
+
+  const firstResults = ana.locator('.results li');
+  await expect(firstResults).toHaveCount(SLATE_SIZE, { timeout: 15_000 });
+  const firstTitles = await firstResults.locator('.name').allInnerTexts();
+
+  // Only the host is offered another round.
+  await expect(ana.getByRole('button', { name: 'Keep voting' })).toHaveCount(0);
+  const keepVoting = host.getByRole('button', { name: 'Keep voting' });
+  await expect(keepVoting).toBeVisible({ timeout: 15_000 });
+  await keepVoting.click();
+
+  // Voting reopens for everyone, labelled as round two.
+  await expect(ana.getByText('Round 2')).toBeVisible({ timeout: 15_000 });
+  await expect(ana.getByRole('status')).toHaveText(
+    `Movie 1 of ${SLATE_SIZE.toString()}`,
+  );
+
+  await voteThroughSlate(ana, () => 'Yes');
+  await voteThroughSlate(bo, () => 'Yes');
+
+  await expect(
+    ana.getByRole('heading', { name: 'Results — round 2' }),
+  ).toBeVisible({ timeout: 15_000 });
+  const secondRows = ana.locator('.results li');
+  await expect(secondRows).toHaveCount(SLATE_SIZE);
+
+  // Nothing from round one comes back, and every pick is explained.
+  const secondTitles = await secondRows.locator('.name').allInnerTexts();
+  for (const title of secondTitles) {
+    expect(firstTitles).not.toContain(title);
+  }
+  await expect(secondRows.nth(0).locator('.reason')).not.toBeEmpty();
+});
+
 test('a refreshed participant resumes at the same card', async ({
   browser,
   page,

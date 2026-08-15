@@ -240,7 +240,15 @@ describe('provider cache limit', () => {
       .run(OLD, '2099-01-01T00:00:00.000Z');
     database
       .prepare(
-        'INSERT INTO room_items (room_id, catalog_item_id, slate_position) VALUES (1, ?, 1)',
+        `INSERT INTO rounds (room_id, round_number, slate_seed, catalog_version,
+           strategy, eligible_count, started_at)
+         VALUES (1, 1, 'seed', 'v1', 'TOP_RATED', 1, ?)`,
+      )
+      .run(OLD);
+    database
+      .prepare(
+        `INSERT INTO room_items (room_id, round_id, catalog_item_id, slate_position)
+         VALUES (1, 1, ?, 1)`,
       )
       .run(itemId);
     // Retire it, then try to collect it.
@@ -294,6 +302,7 @@ describe('0003 upgrade path', () => {
 
     expect(migrate(database, migrationsDirectory)).toEqual([
       '0003_catalog_ranking.sql',
+      '0004_rounds.sql',
     ]);
 
     const status = catalogStatus(database);

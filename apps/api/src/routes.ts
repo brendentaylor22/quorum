@@ -55,6 +55,17 @@ function parsePathToken(value: unknown): string {
   return parsed.data;
 }
 
+/** Optional `?round=N` selector; absent means the latest completed round. */
+function parseRound(request: FastifyRequest): number | undefined {
+  const raw = (request.query as { round?: unknown }).round;
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new ApiError(400, 'invalid_request', 'Invalid round');
+  }
+  return parsed;
+}
+
 function parseRoomId(value: unknown): string {
   const parsed = publicIdSchema.safeParse(value);
   if (!parsed.success) throw notFound();
@@ -280,6 +291,19 @@ export function registerRoomRoutes(
     };
   });
 
+  /** Open another round from what the group has already voted on. */
+  app.post('/api/rooms/:roomId/continue', (request) => {
+    requireSameOrigin(request);
+    const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    const room = service.continueVoting(roomId, hostToken(request));
+    const { caller } = service.resolveCaller(
+      roomId,
+      sessionToken(request, roomId),
+      hostToken(request),
+    );
+    return service.view(room, caller);
+  });
+
   app.get('/api/rooms/:roomId/results', (request) => {
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
     const { room } = service.resolveCaller(
@@ -287,6 +311,6 @@ export function registerRoomRoutes(
       sessionToken(request, roomId),
       hostToken(request),
     );
-    return service.results(room);
+    return service.results(room, parseRound(request));
   });
 }

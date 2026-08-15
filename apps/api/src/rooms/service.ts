@@ -13,6 +13,12 @@ import {
 } from '@quorum/contracts';
 import type { QuorumDatabase } from '@quorum/database';
 import { rankSlate } from '@quorum/ranking';
+import {
+  RECOMMENDER_VERSION,
+  selectRecommendedSlate,
+  type Judgement,
+} from '@quorum/recommend';
+import { catalogFeatures } from '../catalog/features.js';
 import { TMDB_ATTRIBUTION, TMDB_PROVIDER } from '@quorum/tmdb';
 import { catalogStatus } from '../catalog/repository.js';
 import {
@@ -22,6 +28,12 @@ import {
 } from '../capabilities.js';
 import * as repository from './repository.js';
 import type { ParticipantRow, RoomRow, SlateItemRow } from './repository.js';
+
+/**
+ * Candidate pool for a recommended round. Wider than the top-rated pool
+ * because everything the room has already judged is excluded from it.
+ */
+const RECOMMENDER_POOL_SIZE = 2000;
 
 const HOUR_MS = 60 * 60 * 1000;
 const LOBBY_LIFETIME_MS = 24 * HOUR_MS;
@@ -284,6 +296,7 @@ export class RoomService {
     return { participantId: publicId, sessionToken, roomId: room.publicId };
   }
 
+  /** Open round 1: 20 drawn at random from the best-rated pool. */
   start(roomPublicId: string, hostToken: string | undefined): RoomRow {
     const room = this.requireHost(roomPublicId, hostToken);
     if (room.state !== 'LOBBY') throw conflict('Room has already started');
@@ -294,15 +307,24 @@ export class RoomService {
     const version = repository.catalogVersion(this.database);
     if (version === null) throw conflict('Catalog is empty');
     const seed = issueCapability();
-    repository.startRoom(this.database, {
+    const pool = repository.listTopCatalogIds(
+      this.database,
+      SLATE_CANDIDATE_POOL_SIZE,
+    );
+    if (pool.length < SLATE_SIZE) {
+      throw conflict('Catalog does not hold enough movies for a slate');
+    }
+    repository.startRound(this.database, {
       roomId: room.id,
+      roundNumber: 1,
       slateSeed: seed,
       catalogVersion: version,
-      catalogItemIds: selectSlate(
-        repository.listTopCatalogIds(this.database, SLATE_CANDIDATE_POOL_SIZE),
-        SLATE_SIZE,
-        seed,
-      ),
+      strategy: 'TOP_RATED',
+      algorithmVersion: null,
+      slate: selectSlate(pool, SLATE_SIZE, seed).map((catalogItemId) => ({
+        catalogItemId,
+        reason: null,
+      })),
       eligibleCount,
       startedAt: this.nowIso(),
       expiresAt: this.later(VOTING_LIFETIME_MS),
@@ -310,8 +332,61 @@ export class RoomService {
     repository.recordAudit(
       this.database,
       room.id,
-      'room.started',
-      JSON.stringify({ eligibleCount }),
+      'round.started',
+      JSON.stringify({ roundNumber: 1, strategy: 'TOP_RATED', eligibleCount }),
+      this.nowIso(),
+    );
+    return this.reload(room.id);
+  }
+
+  /**
+   * Open another round from what the group has already told us.
+   *
+   * Membership refreezes at the current participant count, so each round's
+   * percentages have their own honest denominator. Movies already judged in
+   * this room are excluded, which the schema also enforces.
+   */
+  continueVoting(roomPublicId: string, hostToken: string | undefined): RoomRow {
+    const room = this.requireHost(roomPublicId, hostToken);
+    if (room.state !== 'COMPLETE') {
+      throw conflict('Voting is still open');
+    }
+    const previous = repository.currentRound(this.database, room.id);
+    if (previous === undefined) throw conflict('Room has no completed round');
+    const eligibleCount = repository.countParticipants(this.database, room.id);
+    if (eligibleCount < 1) {
+      throw conflict('Room has no participants');
+    }
+    const version = repository.catalogVersion(this.database);
+    if (version === null) throw conflict('Catalog is empty');
+
+    const seed = issueCapability();
+    const slate = this.recommendSlate(room.id, seed);
+    if (slate.length < SLATE_SIZE) {
+      throw conflict('Not enough unseen movies remain for another round');
+    }
+    repository.startRound(this.database, {
+      roomId: room.id,
+      roundNumber: previous.roundNumber + 1,
+      slateSeed: seed,
+      catalogVersion: version,
+      strategy: 'RECOMMENDED',
+      algorithmVersion: RECOMMENDER_VERSION,
+      slate,
+      eligibleCount,
+      startedAt: this.nowIso(),
+      expiresAt: this.later(VOTING_LIFETIME_MS),
+    });
+    repository.recordAudit(
+      this.database,
+      room.id,
+      'round.started',
+      JSON.stringify({
+        roundNumber: previous.roundNumber + 1,
+        strategy: 'RECOMMENDED',
+        algorithmVersion: RECOMMENDER_VERSION,
+        eligibleCount,
+      }),
       this.nowIso(),
     );
     return this.reload(room.id);
@@ -320,18 +395,20 @@ export class RoomService {
   close(roomPublicId: string, hostToken: string | undefined): RoomRow {
     const room = this.requireHost(roomPublicId, hostToken);
     if (room.state !== 'VOTING') throw conflict('Room is not voting');
-    repository.markRoomComplete(
-      this.database,
-      room.id,
-      this.nowIso(),
-      true,
-      this.later(COMPLETED_LIFETIME_MS),
-    );
+    const round = repository.currentRound(this.database, room.id);
+    if (round === undefined) throw conflict('Room has no open round');
+    repository.markRoundComplete(this.database, {
+      roomId: room.id,
+      roundId: round.id,
+      completedAt: this.nowIso(),
+      closedEarly: true,
+      expiresAt: this.later(COMPLETED_LIFETIME_MS),
+    });
     repository.recordAudit(
       this.database,
       room.id,
-      'room.closed_early',
-      null,
+      'round.closed_early',
+      JSON.stringify({ roundNumber: round.roundNumber }),
       this.nowIso(),
     );
     return this.reload(room.id);
@@ -373,6 +450,8 @@ export class RoomService {
     if (exposure === undefined) throw notFound();
     if (exposure.participantId !== participant.id) throw notFound();
     if (room.state !== 'VOTING') throw conflict('Room is not accepting votes');
+    const round = repository.currentRound(this.database, room.id);
+    if (round === undefined) throw conflict('Room has no open round');
     const existing = repository.findInteraction(this.database, exposure.id);
     if (existing !== undefined) {
       if (existing.choice !== choice) {
@@ -381,7 +460,6 @@ export class RoomService {
       return { confirmedAt: existing.confirmedAt };
     }
     const confirmedAt = this.nowIso();
-    const completedAt = this.nowIso();
     const completionExpiry = this.later(COMPLETED_LIFETIME_MS);
     this.database.transaction(() => {
       repository.insertInteraction(
@@ -390,22 +468,95 @@ export class RoomService {
         choice,
         confirmedAt,
       );
-      const eligible = room.eligibleCount ?? 0;
-      const required = eligible * repository.countSlate(this.database, room.id);
+      // A round closes once its own frozen membership has answered its own
+      // slate; earlier rounds are already closed and must not be counted.
+      const required =
+        round.eligibleCount * repository.countSlate(this.database, round.id);
       if (
         required > 0 &&
-        repository.countRoomConfirmed(this.database, room.id) >= required
+        repository.countRoundConfirmed(this.database, round.id) >= required
       ) {
-        repository.markRoomComplete(
-          this.database,
-          room.id,
-          completedAt,
-          false,
-          completionExpiry,
-        );
+        repository.markRoundComplete(this.database, {
+          roomId: room.id,
+          roundId: round.id,
+          completedAt: confirmedAt,
+          closedEarly: false,
+          expiresAt: completionExpiry,
+        });
       }
     })();
     return { confirmedAt };
+  }
+
+  /**
+   * Build the next slate from the room's own swipes.
+   *
+   * Only this room's confirmed interactions are used. Nothing crosses room
+   * boundaries, so anonymous history stays room-scoped exactly as the data
+   * model promises.
+   */
+  private recommendSlate(
+    roomId: number,
+    seed: string,
+  ): { catalogItemId: number; reason: string | null }[] {
+    const candidateIds = this.unseenCandidates(roomId);
+    if (candidateIds.length < SLATE_SIZE) return [];
+
+    const interactions = repository.listRoomInteractions(this.database, roomId);
+    const judgements: Judgement[] = interactions.map((row) => ({
+      participant: row.participantId.toString(),
+      item: row.catalogItemId.toString(),
+      liked: row.choice === 'RIGHT',
+    }));
+    const judgedItems = catalogFeatures(this.database, [
+      ...new Set(interactions.map((row) => row.catalogItemId)),
+    ]);
+    const candidates = catalogFeatures(this.database, candidateIds);
+
+    const selected = selectRecommendedSlate(
+      judgements,
+      judgedItems,
+      candidates,
+      { size: SLATE_SIZE, seed },
+    );
+    const labels = this.tagLabels(selected.flatMap((entry) => entry.topTags));
+    return selected.map((entry) => ({
+      catalogItemId: Number(entry.item),
+      reason: describeSelection(entry, labels),
+    }));
+  }
+
+  /**
+   * Human names for tags that came from the catalog, so a reason can read
+   * "Action" rather than "genre:28".
+   */
+  private tagLabels(tags: readonly string[]): Map<string, string> {
+    const labels = new Map<string, string>();
+    const genreIds: number[] = [];
+    const keywordIds: number[] = [];
+    for (const tag of new Set(tags)) {
+      const [namespace, value] = tag.split(':');
+      if (value === undefined) continue;
+      if (namespace === 'genre') genreIds.push(Number(value));
+      else if (namespace === 'keyword') keywordIds.push(Number(value));
+      else if (namespace === 'decade') labels.set(tag, `${value}s`);
+      else if (namespace === 'runtime') labels.set(tag, `${value} films`);
+    }
+    for (const [table, ids, namespace] of [
+      ['catalog_genres', genreIds, 'genre'],
+      ['catalog_keywords', keywordIds, 'keyword'],
+    ] as const) {
+      if (ids.length === 0) continue;
+      const rows = this.database
+        .prepare(
+          `SELECT id, name FROM ${table} WHERE id IN (${ids.map(() => '?').join(',')})`,
+        )
+        .all(...ids) as { id: number; name: string }[];
+      for (const row of rows) {
+        labels.set(`${namespace}:${row.id.toString()}`, row.name);
+      }
+    }
+    return labels;
   }
 
   private toCatalogItem(item: SlateItemRow): CatalogItemDto {
@@ -422,6 +573,7 @@ export class RoomService {
 
   private summarise(
     participant: ParticipantRow,
+    confirmedCount: number,
     slateSize: number,
     started: boolean,
   ): ParticipantSummary {
@@ -429,26 +581,41 @@ export class RoomService {
       participantId: participant.publicId,
       displayName: participant.displayName,
       isHost: participant.isHost,
-      confirmedCount: participant.confirmedCount,
-      complete: started && participant.confirmedCount >= slateSize,
+      confirmedCount,
+      complete: started && slateSize > 0 && confirmedCount >= slateSize,
     };
   }
 
   /**
    * Build the caller's view of a room. Other participants' choices are never
    * included; only their progress counts are.
+   *
+   * Progress is scoped to the current round, so opening a second round resets
+   * everyone's counter rather than carrying round one's totals forward.
    */
   view(room: RoomRow, caller: Caller): RoomView {
-    const slateSize = repository.countSlate(this.database, room.id);
+    const round = repository.currentRound(this.database, room.id);
+    const slateSize =
+      round === undefined ? 0 : repository.countSlate(this.database, round.id);
     const participants = repository.listParticipants(this.database, room.id);
     const started = room.state !== 'LOBBY';
     const you = caller.participant;
+
+    const confirmedIn = (participantId: number): number =>
+      round === undefined
+        ? 0
+        : repository.countConfirmedInRound(
+            this.database,
+            participantId,
+            round.id,
+          );
+
     let card: RoomView['card'] = null;
-    if (room.state === 'VOTING' && you !== undefined) {
+    if (room.state === 'VOTING' && you !== undefined && round !== undefined) {
       const next = repository.nextUnconfirmedItem(
         this.database,
         you.id,
-        room.id,
+        round.id,
       );
       if (next !== undefined) {
         const exposure = repository.findOrCreateExposure(this.database, {
@@ -456,7 +623,7 @@ export class RoomService {
           roomItemId: next.roomItemId,
           publicId: issuePublicId(),
           shownAt: this.nowIso(),
-          slateVersion: room.catalogVersion ?? 'unknown',
+          slateVersion: round.catalogVersion,
         });
         card = {
           exposureId: exposure.publicId,
@@ -466,15 +633,26 @@ export class RoomService {
         };
       }
     }
+
+    const rounds = repository.listRounds(this.database, room.id);
+    const completedRounds = rounds
+      .filter((entry) => entry.completedAt !== null)
+      .map((entry) => entry.roundNumber);
+
     return {
       roomId: room.publicId,
       state: room.state,
       isHost: caller.isHost,
       closedEarly: room.closedEarly,
       slateSize,
-      eligibleCount: room.eligibleCount,
+      eligibleCount: round?.eligibleCount ?? room.eligibleCount,
       participants: participants.map((participant) =>
-        this.summarise(participant, slateSize, started),
+        this.summarise(
+          participant,
+          confirmedIn(participant.id),
+          slateSize,
+          started,
+        ),
       ),
       you:
         you === undefined
@@ -482,26 +660,65 @@ export class RoomService {
           : this.summarise(
               participants.find((participant) => participant.id === you.id) ??
                 you,
+              confirmedIn(you.id),
               slateSize,
               started,
             ),
       card,
-      resultsAvailable: room.state === 'COMPLETE',
+      resultsAvailable: completedRounds.length > 0,
+      round:
+        round === undefined
+          ? null
+          : {
+              roundNumber: round.roundNumber,
+              strategy: round.strategy,
+              slateSize,
+              complete: round.completedAt !== null,
+            },
+      completedRounds,
+      canContinue: caller.isHost && this.canContinue(room),
     };
   }
 
-  /** Canonical results, derived only from stored interactions. */
-  results(room: RoomRow): ResultsResponse {
-    if (room.state !== 'COMPLETE') {
+  /** Whether another round could be built right now. */
+  private canContinue(room: RoomRow): boolean {
+    if (room.state !== 'COMPLETE') return false;
+    return this.unseenCandidates(room.id).length >= SLATE_SIZE;
+  }
+
+  /** Active catalog items this room has not already put in front of anyone. */
+  private unseenCandidates(roomId: number): number[] {
+    const seen = new Set(
+      repository.listRoomCatalogItemIds(this.database, roomId),
+    );
+    return repository
+      .listTopCatalogIds(this.database, RECOMMENDER_POOL_SIZE)
+      .filter((id) => !seen.has(id));
+  }
+
+  /**
+   * Canonical results for one round, derived only from stored interactions.
+   * Defaults to the most recently completed round.
+   */
+  results(room: RoomRow, roundNumber?: number): ResultsResponse {
+    const rounds = repository.listRounds(this.database, room.id);
+    const completed = rounds.filter((entry) => entry.completedAt !== null);
+    if (completed.length === 0) {
       throw conflict('Results are hidden until voting ends');
     }
-    const eligible = room.eligibleCount ?? 0;
-    if (eligible < 1) throw conflict('Room has no eligible participants');
-    const slate = repository.listSlate(this.database, room.id);
+    const round =
+      roundNumber === undefined
+        ? completed[completed.length - 1]
+        : completed.find((entry) => entry.roundNumber === roundNumber);
+    if (round === undefined) throw notFound();
+
+    const eligible = round.eligibleCount;
+    if (eligible < 1) throw conflict('Round has no eligible participants');
+    const slate = repository.listSlate(this.database, round.id);
     const byRoomItem = new Map(slate.map((item) => [item.roomItemId, item]));
     const ranked = rankSlate(
       eligible,
-      repository.tallies(this.database, room.id).map((tally) => ({
+      repository.tallies(this.database, round.id).map((tally) => ({
         item: tally.roomItemId.toString(),
         slatePosition: tally.slatePosition,
         yes: tally.yes,
@@ -511,9 +728,12 @@ export class RoomService {
     return {
       roomId: room.publicId,
       state: room.state,
-      closedEarly: room.closedEarly,
+      closedEarly: round.closedEarly,
       eligibleCount: eligible,
-      completedAt: room.completedAt,
+      completedAt: round.completedAt,
+      roundNumber: round.roundNumber,
+      strategy: round.strategy,
+      completedRounds: completed.map((entry) => entry.roundNumber),
       items: ranked.map((row) => {
         const slateItem = byRoomItem.get(Number(row.item));
         if (slateItem === undefined) throw new Error('Slate item missing');
@@ -522,6 +742,7 @@ export class RoomService {
           catalogItemId: slateItem.providerRef,
           slatePosition: row.slatePosition,
           item: this.toCatalogItem(slateItem),
+          reason: slateItem.reason,
           yes: row.yes,
           responses: row.responses,
           eligible: row.eligible,
@@ -533,4 +754,27 @@ export class RoomService {
       }),
     };
   }
+}
+
+/**
+ * A short, honest explanation of why an item is on the slate. Exploration
+ * picks say so rather than inventing a preference that did not drive them.
+ */
+function describeSelection(
+  entry: { exploration: boolean; supporters: number; topTags: string[] },
+  labels: ReadonlyMap<string, string>,
+): string {
+  if (entry.exploration) return 'Something different';
+  const named = entry.topTags
+    .map((tag) => labels.get(tag))
+    .filter((name): name is string => name !== undefined);
+  if (named.length === 0) {
+    return entry.supporters > 0
+      ? `Looks right for ${entry.supporters.toString()} of you`
+      : 'Broadly agreeable';
+  }
+  const because = named.join(' and ');
+  return entry.supporters > 0
+    ? `${because}, for ${entry.supporters.toString()} of you`
+    : because;
 }

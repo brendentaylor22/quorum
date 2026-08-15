@@ -24,13 +24,22 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
       });
   }, [hostToken, results, room]);
 
-  function act(action: 'start' | 'close') {
+  function act(action: 'start' | 'close' | 'continue') {
     if (room === null) return;
     setBusy(true);
     setNotice(null);
-    const call = action === 'start' ? api.start : api.close;
+    const call =
+      action === 'start'
+        ? api.start
+        : action === 'close'
+          ? api.close
+          : api.continueVoting;
     void call(room.roomId, hostToken)
-      .then(() => refresh())
+      .then(() => {
+        // A new round replaces the previous round's results.
+        if (action === 'continue') setResults(null);
+        return refresh();
+      })
       .catch((caught: unknown) => {
         setNotice(
           caught instanceof Error ? caught.message : 'That action failed.',
@@ -202,6 +211,29 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
         >
           Close voting now
         </button>
+      ) : null}
+      {room.canContinue ? (
+        <section aria-labelledby="continue-heading">
+          <h3 id="continue-heading">Not settled yet?</h3>
+          <p className="lede">
+            Keep going with 20 more, chosen from what everyone liked this round.
+            Nothing you have already voted on comes back.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              act('continue');
+            }}
+          >
+            Keep voting
+          </button>
+        </section>
+      ) : null}
+      {room.state === 'COMPLETE' && !room.canContinue && room.round !== null ? (
+        <p className="hint">
+          Not enough unseen movies remain for another round.
+        </p>
       ) : null}
       {notice === null ? null : (
         <p className="notice" role="alert">

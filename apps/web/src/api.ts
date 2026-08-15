@@ -115,6 +115,15 @@ export const api = {
       hostToken,
     }),
 
+  continueVoting: async (
+    roomId: string,
+    hostToken: string,
+  ): Promise<RoomView> =>
+    request<RoomView>(`/api/rooms/${roomId}/continue`, {
+      method: 'POST',
+      hostToken,
+    }),
+
   close: async (roomId: string, hostToken: string): Promise<RoomView> =>
     request<RoomView>(`/api/rooms/${roomId}/close`, {
       method: 'POST',

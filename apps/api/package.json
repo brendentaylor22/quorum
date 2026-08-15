@@ -17,6 +17,7 @@
     "@quorum/catalog": "0.1.0",
     "@quorum/contracts": "0.1.0",
     "@quorum/ranking": "0.1.0",
+    "@quorum/recommend": "0.1.0",
     "@quorum/tmdb": "0.1.0"
   },
   "devDependencies": {

@@ -3,11 +3,19 @@ import type { ResultsResponse } from '@quorum/contracts';
 export function Results({ results }: { results: ResultsResponse }) {
   return (
     <section aria-labelledby="results-heading">
-      <h2 id="results-heading">Results</h2>
+      <h2 id="results-heading">
+        Results
+        {results.roundNumber > 1
+          ? ` — round ${results.roundNumber.toString()}`
+          : ''}
+      </h2>
       <p className="lede">
         {results.closedEarly
           ? 'The host closed voting early. People who did not answer still count in the totals.'
           : 'Everyone finished voting.'}
+        {results.strategy === 'RECOMMENDED'
+          ? ' This round was picked from what the group liked last time.'
+          : ''}
       </p>
       <ol className="results">
         {results.items.map((item) => (
@@ -21,6 +29,9 @@ export function Results({ results }: { results: ResultsResponse }) {
               {item.approvalPct}% ({item.yesFraction})
             </span>
             <span className="coverage">{item.coveragePct}% answered</span>
+            {item.reason === null ? null : (
+              <span className="reason">{item.reason}</span>
+            )}
           </li>
         ))}
       </ol>

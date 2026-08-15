@@ -111,6 +111,18 @@ export const exposureCardSchema = z.object({
 });
 export type ExposureCard = z.infer<typeof exposureCardSchema>;
 
+/** How a round's slate was chosen; shown so a later slate can be explained. */
+export const slateStrategySchema = z.enum(['TOP_RATED', 'RECOMMENDED']);
+export type SlateStrategy = z.infer<typeof slateStrategySchema>;
+
+export const roundSummarySchema = z.object({
+  roundNumber: z.number().int().positive(),
+  strategy: slateStrategySchema,
+  slateSize: z.number().int().nonnegative(),
+  complete: z.boolean(),
+});
+export type RoundSummary = z.infer<typeof roundSummarySchema>;
+
 export const roomViewSchema = z.object({
   roomId: publicIdSchema,
   state: roomStateSchema,
@@ -123,6 +135,15 @@ export const roomViewSchema = z.object({
   /** Next unconfirmed exposure for the calling participant, if any. */
   card: exposureCardSchema.nullable(),
   resultsAvailable: z.boolean(),
+  /** The round in progress, or the most recent one once voting has ended. */
+  round: roundSummarySchema.nullable(),
+  /** Completed round numbers, oldest first, each with readable results. */
+  completedRounds: z.array(z.number().int().positive()),
+  /**
+   * Whether the host may open another round. False when voting is still open,
+   * or when too few unseen movies remain to build a full slate.
+   */
+  canContinue: z.boolean(),
 });
 export type RoomView = z.infer<typeof roomViewSchema>;
 
@@ -151,6 +172,8 @@ export const rankedItemSchema = z.object({
   catalogItemId: z.string(),
   slatePosition: z.number().int().positive(),
   item: catalogItemSchema,
+  /** Why the recommender chose this item. Null on a top-rated slate. */
+  reason: z.string().nullable(),
   yes: z.number().int().nonnegative(),
   responses: z.number().int().nonnegative(),
   eligible: z.number().int().positive(),
@@ -168,6 +191,9 @@ export const resultsResponseSchema = z.object({
   eligibleCount: z.number().int().positive(),
   completedAt: z.iso.datetime().nullable(),
   items: z.array(rankedItemSchema),
+  roundNumber: z.number().int().positive(),
+  strategy: slateStrategySchema,
+  completedRounds: z.array(z.number().int().positive()),
 });
 export type ResultsResponse = z.infer<typeof resultsResponseSchema>;
 

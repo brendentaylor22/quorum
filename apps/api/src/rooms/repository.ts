@@ -41,7 +41,40 @@ export interface SlateItemRow {
   runtimeMinutes: number | null;
   contentRating: string | null;
   imageRef: string | null;
+  reason: string | null;
 }
+
+/** How a round's slate was chosen. Persisted so a slate can be explained. */
+export type SlateStrategy = 'TOP_RATED' | 'RECOMMENDED';
+
+export interface RoundRow {
+  id: number;
+  roomId: number;
+  roundNumber: number;
+  slateSeed: string;
+  catalogVersion: string;
+  strategy: SlateStrategy;
+  algorithmVersion: string | null;
+  eligibleCount: number;
+  startedAt: string;
+  completedAt: string | null;
+  closedEarly: boolean;
+}
+
+interface RawRound extends Omit<RoundRow, 'closedEarly'> {
+  closedEarly: number;
+}
+
+function toRound(row: RawRound | undefined): RoundRow | undefined {
+  if (row === undefined) return undefined;
+  return { ...row, closedEarly: row.closedEarly === 1 };
+}
+
+const roundColumns = `id, room_id AS roomId, round_number AS roundNumber,
+  slate_seed AS slateSeed, catalog_version AS catalogVersion, strategy,
+  algorithm_version AS algorithmVersion, eligible_count AS eligibleCount,
+  started_at AS startedAt, completed_at AS completedAt,
+  closed_early AS closedEarly`;
 
 export interface ExposureRow {
   id: number;
@@ -351,30 +384,41 @@ export function touchParticipant(
     .run(now, participantId);
 }
 
-export interface StartRoomInput {
+export interface StartRoundInput {
   roomId: number;
+  roundNumber: number;
   slateSeed: string;
   catalogVersion: string;
-  catalogItemIds: readonly number[];
+  strategy: SlateStrategy;
+  algorithmVersion: string | null;
+  /** Catalog ids in slate order, each with an optional selection reason. */
+  slate: readonly { catalogItemId: number; reason: string | null }[];
   eligibleCount: number;
   startedAt: string;
   expiresAt: string;
 }
 
-/** Freeze membership and slate atomically. */
-export function startRoom(
+/**
+ * Open a round: freeze its participant count and slate, and put the room back
+ * into voting. The unique constraint on `(room_id, catalog_item_id)` is what
+ * stops a later round re-showing a movie the group has already judged, so a
+ * repeat fails loudly here rather than reaching a participant.
+ */
+export function startRound(
   database: QuorumDatabase,
-  input: StartRoomInput,
-): void {
+  input: StartRoundInput,
+): RoundRow {
   const insertItem = database.prepare(
-    'INSERT INTO room_items (room_id, catalog_item_id, slate_position) VALUES (?, ?, ?)',
+    `INSERT INTO room_items (room_id, round_id, catalog_item_id, slate_position, reason)
+     VALUES (?, ?, ?, ?, ?)`,
   );
-  database.transaction(() => {
+  return database.transaction(() => {
     const updated = database
       .prepare(
-        `UPDATE rooms SET state = 'VOTING', started_at = ?, slate_seed = ?,
-           catalog_version = ?, eligible_count = ?, expires_at = ?
-         WHERE id = ? AND state = 'LOBBY'`,
+        `UPDATE rooms SET state = 'VOTING', started_at = coalesce(started_at, ?),
+           slate_seed = ?, catalog_version = ?, eligible_count = ?,
+           completed_at = NULL, closed_early = 0, expires_at = ?
+         WHERE id = ? AND state IN ('LOBBY', 'COMPLETE')`,
       )
       .run(
         input.startedAt,
@@ -385,17 +429,146 @@ export function startRoom(
         input.roomId,
       );
     if (updated.changes !== 1) {
-      throw new Error('Room is no longer in the lobby');
+      throw new Error('Room cannot start a round in its current state');
     }
-    input.catalogItemIds.forEach((catalogItemId, index) => {
-      insertItem.run(input.roomId, catalogItemId, index + 1);
+    const result = database
+      .prepare(
+        `INSERT INTO rounds (
+           room_id, round_number, slate_seed, catalog_version, strategy,
+           algorithm_version, eligible_count, started_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.roomId,
+        input.roundNumber,
+        input.slateSeed,
+        input.catalogVersion,
+        input.strategy,
+        input.algorithmVersion,
+        input.eligibleCount,
+        input.startedAt,
+      );
+    const roundId = Number(result.lastInsertRowid);
+    input.slate.forEach((entry, index) => {
+      insertItem.run(
+        input.roomId,
+        roundId,
+        entry.catalogItemId,
+        index + 1,
+        entry.reason,
+      );
     });
+    const round = findRoundById(database, roundId);
+    if (round === undefined) throw new Error('Round did not persist');
+    return round;
   })();
+}
+
+export function findRoundById(
+  database: QuorumDatabase,
+  id: number,
+): RoundRow | undefined {
+  return toRound(
+    database
+      .prepare(`SELECT ${roundColumns} FROM rounds WHERE id = ?`)
+      .get(id) as RawRound | undefined,
+  );
+}
+
+/** The room's most recent round, whether or not it has completed. */
+export function currentRound(
+  database: QuorumDatabase,
+  roomId: number,
+): RoundRow | undefined {
+  return toRound(
+    database
+      .prepare(
+        `SELECT ${roundColumns} FROM rounds WHERE room_id = ?
+          ORDER BY round_number DESC LIMIT 1`,
+      )
+      .get(roomId) as RawRound | undefined,
+  );
+}
+
+export function findRound(
+  database: QuorumDatabase,
+  roomId: number,
+  roundNumber: number,
+): RoundRow | undefined {
+  return toRound(
+    database
+      .prepare(
+        `SELECT ${roundColumns} FROM rounds WHERE room_id = ? AND round_number = ?`,
+      )
+      .get(roomId, roundNumber) as RawRound | undefined,
+  );
+}
+
+export function listRounds(
+  database: QuorumDatabase,
+  roomId: number,
+): RoundRow[] {
+  return (
+    database
+      .prepare(
+        `SELECT ${roundColumns} FROM rounds WHERE room_id = ? ORDER BY round_number`,
+      )
+      .all(roomId) as RawRound[]
+  ).map((row) => {
+    const round = toRound(row);
+    if (round === undefined) throw new Error('Round row did not map');
+    return round;
+  });
+}
+
+/** Close a round and the room together; results become readable. */
+export function markRoundComplete(
+  database: QuorumDatabase,
+  input: {
+    roomId: number;
+    roundId: number;
+    completedAt: string;
+    closedEarly: boolean;
+    expiresAt: string;
+  },
+): void {
+  database.transaction(() => {
+    database
+      .prepare(
+        `UPDATE rounds SET completed_at = ?, closed_early = ?
+          WHERE id = ? AND completed_at IS NULL`,
+      )
+      .run(input.completedAt, input.closedEarly ? 1 : 0, input.roundId);
+    database
+      .prepare(
+        `UPDATE rooms SET state = 'COMPLETE', completed_at = ?, closed_early = ?,
+           expires_at = ?
+         WHERE id = ? AND state = 'VOTING'`,
+      )
+      .run(
+        input.completedAt,
+        input.closedEarly ? 1 : 0,
+        input.expiresAt,
+        input.roomId,
+      );
+  })();
+}
+
+/** Catalog items already shown in this room, across every round. */
+export function listRoomCatalogItemIds(
+  database: QuorumDatabase,
+  roomId: number,
+): number[] {
+  return (
+    database
+      .prepare('SELECT catalog_item_id AS id FROM room_items WHERE room_id = ?')
+      .all(roomId) as { id: number }[]
+  ).map((row) => row.id);
 }
 
 export function listSlate(
   database: QuorumDatabase,
-  roomId: number,
+  roundId: number,
 ): SlateItemRow[] {
   return database
     .prepare(
@@ -403,27 +576,27 @@ export function listSlate(
               c.id AS catalogItemId, c.provider_ref AS providerRef, c.title AS title,
               c.release_year AS releaseYear, c.synopsis AS synopsis,
               c.runtime_minutes AS runtimeMinutes, c.content_rating AS contentRating,
-              c.image_ref AS imageRef
+              c.image_ref AS imageRef, ri.reason AS reason
          FROM room_items ri
          JOIN catalog_items c ON c.id = ri.catalog_item_id
-        WHERE ri.room_id = ?
+        WHERE ri.round_id = ?
         ORDER BY ri.slate_position`,
     )
-    .all(roomId) as SlateItemRow[];
+    .all(roundId) as SlateItemRow[];
 }
 
-export function countSlate(database: QuorumDatabase, roomId: number): number {
+export function countSlate(database: QuorumDatabase, roundId: number): number {
   const row = database
-    .prepare('SELECT count(*) AS count FROM room_items WHERE room_id = ?')
-    .get(roomId) as { count: number };
+    .prepare('SELECT count(*) AS count FROM room_items WHERE round_id = ?')
+    .get(roundId) as { count: number };
   return row.count;
 }
 
-/** First slate item the participant has not confirmed, in persisted order. */
+/** First item of this round the participant has not confirmed, in slate order. */
 export function nextUnconfirmedItem(
   database: QuorumDatabase,
   participantId: number,
-  roomId: number,
+  roundId: number,
 ): SlateItemRow | undefined {
   return database
     .prepare(
@@ -431,10 +604,10 @@ export function nextUnconfirmedItem(
               c.id AS catalogItemId, c.provider_ref AS providerRef, c.title AS title,
               c.release_year AS releaseYear, c.synopsis AS synopsis,
               c.runtime_minutes AS runtimeMinutes, c.content_rating AS contentRating,
-              c.image_ref AS imageRef
+              c.image_ref AS imageRef, ri.reason AS reason
          FROM room_items ri
          JOIN catalog_items c ON c.id = ri.catalog_item_id
-        WHERE ri.room_id = ?
+        WHERE ri.round_id = ?
           AND NOT EXISTS (
             SELECT 1 FROM exposures e
               JOIN interactions i ON i.exposure_id = e.id
@@ -443,7 +616,7 @@ export function nextUnconfirmedItem(
         ORDER BY ri.slate_position
         LIMIT 1`,
     )
-    .get(roomId, participantId) as SlateItemRow | undefined;
+    .get(roundId, participantId) as SlateItemRow | undefined;
 }
 
 /**
@@ -526,36 +699,39 @@ export function insertInteraction(
     .run(exposureId, choice, confirmedAt);
 }
 
-export function countConfirmed(
+/** Confirmations by one participant within one round. */
+export function countConfirmedInRound(
   database: QuorumDatabase,
   participantId: number,
+  roundId: number,
 ): number {
   const row = database
     .prepare(
       `SELECT count(*) AS count FROM exposures e
          JOIN interactions i ON i.exposure_id = e.id
-        WHERE e.participant_id = ?`,
+         JOIN room_items ri ON ri.id = e.room_item_id
+        WHERE e.participant_id = ? AND ri.round_id = ?`,
     )
-    .get(participantId) as { count: number };
+    .get(participantId, roundId) as { count: number };
   return row.count;
 }
 
-export function countRoomConfirmed(
+export function countRoundConfirmed(
   database: QuorumDatabase,
-  roomId: number,
+  roundId: number,
 ): number {
   const row = database
     .prepare(
       `SELECT count(*) AS count FROM interactions i
          JOIN exposures e ON e.id = i.exposure_id
-         JOIN participants p ON p.id = e.participant_id
-        WHERE p.room_id = ?`,
+         JOIN room_items ri ON ri.id = e.room_item_id
+        WHERE ri.round_id = ?`,
     )
-    .get(roomId) as { count: number };
+    .get(roundId) as { count: number };
   return row.count;
 }
 
-export function tallies(database: QuorumDatabase, roomId: number): TallyRow[] {
+export function tallies(database: QuorumDatabase, roundId: number): TallyRow[] {
   return database
     .prepare(
       `SELECT ri.id AS roomItemId, ri.slate_position AS slatePosition,
@@ -564,11 +740,11 @@ export function tallies(database: QuorumDatabase, roomId: number): TallyRow[] {
          FROM room_items ri
          LEFT JOIN exposures e ON e.room_item_id = ri.id
          LEFT JOIN interactions i ON i.exposure_id = e.id
-        WHERE ri.room_id = ?
+        WHERE ri.round_id = ?
         GROUP BY ri.id
         ORDER BY ri.slate_position`,
     )
-    .all(roomId) as TallyRow[];
+    .all(roundId) as TallyRow[];
 }
 
 export function recordAudit(
@@ -597,4 +773,33 @@ export function listExpiredRoomIds(
       )
       .all(now) as { id: number }[]
   ).map((row) => row.id);
+}
+
+export interface RoomInteractionRow {
+  participantId: number;
+  catalogItemId: number;
+  choice: 'LEFT' | 'RIGHT';
+}
+
+/**
+ * Every confirmed swipe in a room, across all rounds. This is the
+ * recommender's only input: the group's own judgements, keyed by participant
+ * so a per-person profile can be built before any group aggregation.
+ */
+export function listRoomInteractions(
+  database: QuorumDatabase,
+  roomId: number,
+): RoomInteractionRow[] {
+  return database
+    .prepare(
+      `SELECT e.participant_id AS participantId,
+              ri.catalog_item_id AS catalogItemId,
+              i.choice AS choice
+         FROM interactions i
+         JOIN exposures e ON e.id = i.exposure_id
+         JOIN room_items ri ON ri.id = e.room_item_id
+        WHERE ri.room_id = ?
+        ORDER BY i.id`,
+    )
+    .all(roomId) as RoomInteractionRow[];
 }
