@@ -23,6 +23,7 @@ describe('database operations', () => {
       '0003_catalog_ranking.sql',
       '0004_rounds.sql',
       '0005_catalog_images.sql',
+      '0006_slate_scores.sql',
     ]);
     expect(migrate(database, migrationsDirectory)).toEqual([]);
     database

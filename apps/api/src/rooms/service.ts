@@ -366,6 +366,7 @@ export class RoomService {
       slate: selectSlate(pool, SLATE_SIZE, seed).map((catalogItemId) => ({
         catalogItemId,
         reason: null,
+        score: null,
       })),
       eligibleCount,
       startedAt: this.nowIso(),
@@ -540,7 +541,7 @@ export class RoomService {
   private recommendSlate(
     roomId: number,
     seed: string,
-  ): { catalogItemId: number; reason: string | null }[] {
+  ): { catalogItemId: number; reason: string | null; score: number | null }[] {
     const candidateIds = this.unseenCandidates(roomId);
     if (candidateIds.length < SLATE_SIZE) return [];
 
@@ -565,6 +566,9 @@ export class RoomService {
     return selected.map((entry) => ({
       catalogItemId: Number(entry.item),
       reason: describeSelection(entry, labels),
+      // An exploration slot was not scored, and reporting its zero as a
+      // prediction would misrepresent a random pick as a confident one.
+      score: entry.exploration ? null : entry.score,
     }));
   }
 
@@ -610,6 +614,7 @@ export class RoomService {
       synopsis: item.synopsis,
       runtimeMinutes: item.runtimeMinutes,
       contentRating: item.contentRating,
+      genres: item.genres,
       posterRef: item.imageRef,
       // A fixture reference is not a provider path, so it yields no URL and
       // the client falls back to its placeholder tile.
@@ -682,6 +687,8 @@ export class RoomService {
           slatePosition: next.slatePosition,
           slateSize,
           item: this.toCatalogItem(next),
+          reason: next.reason,
+          score: toScorePercent(next.score),
         };
       }
     }
@@ -795,6 +802,7 @@ export class RoomService {
           slatePosition: row.slatePosition,
           item: this.toCatalogItem(slateItem),
           reason: slateItem.reason,
+          score: toScorePercent(slateItem.score),
           yes: row.yes,
           responses: row.responses,
           eligible: row.eligible,
@@ -806,6 +814,16 @@ export class RoomService {
       }),
     };
   }
+}
+
+/**
+ * The recommender's 0-1 score as a whole percentage, which is the only form
+ * the client shows. Clamped because a scoring change must never produce a
+ * value the contract rejects.
+ */
+function toScorePercent(score: number | null): number | null {
+  if (score === null || !Number.isFinite(score)) return null;
+  return Math.min(100, Math.max(0, Math.round(score * 100)));
 }
 
 /**

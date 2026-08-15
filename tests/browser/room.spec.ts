@@ -138,6 +138,9 @@ test('the host can keep voting with a recommended second round', async ({
   await expect(ana.getByRole('status')).toHaveText(
     `Movie 1 of ${SLATE_SIZE.toString()}`,
   );
+  // The card carries the score that put it on the slate, so a voter can see
+  // the recommender is doing something rather than reshuffling.
+  await expect(ana.locator('.pick-score')).toContainText('predicted match');
 
   await voteThroughSlate(ana, () => 'Yes');
   await voteThroughSlate(bo, () => 'Yes');
@@ -154,6 +157,11 @@ test('the host can keep voting with a recommended second round', async ({
     expect(firstTitles).not.toContain(title);
   }
   await expect(secondRows.nth(0).locator('.reason')).not.toBeEmpty();
+
+  // Results carry the prediction next to the outcome. Exploration slots are
+  // unscored, so only the scored majority of the slate shows one.
+  const predicted = await secondRows.locator('.predicted').count();
+  expect(predicted).toBeGreaterThan(SLATE_SIZE / 2);
 });
 
 test('a refreshed participant resumes at the same card', async ({

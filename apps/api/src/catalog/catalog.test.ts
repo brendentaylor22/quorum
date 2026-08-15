@@ -411,6 +411,7 @@ describe('0003 upgrade path', () => {
       '0003_catalog_ranking.sql',
       '0004_rounds.sql',
       '0005_catalog_images.sql',
+      '0006_slate_scores.sql',
     ]);
 
     const status = catalogStatus(database);

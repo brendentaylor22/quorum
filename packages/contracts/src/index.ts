@@ -69,6 +69,11 @@ export const catalogItemSchema = z.object({
   synopsis: z.string().nullable(),
   runtimeMinutes: z.number().int().nullable(),
   contentRating: z.string().nullable(),
+  /**
+   * Display genre names, in the provider's own order. Empty when the catalog
+   * carries no genre data, which is the case for the development fixture.
+   */
+  genres: z.array(z.string()),
   /** Raw provider reference, kept for diagnostics. Not a URL. */
   posterRef: z.string().nullable(),
   /**
@@ -110,11 +115,26 @@ export const participantSummarySchema = z.object({
 });
 export type ParticipantSummary = z.infer<typeof participantSummarySchema>;
 
+/**
+ * Predicted group willingness for one slate item, as a percentage. Null
+ * wherever no score drove the pick: a top-rated slate, or an exploration slot
+ * filled at random.
+ */
+export const recommendationScoreSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(100)
+  .nullable();
+
 export const exposureCardSchema = z.object({
   exposureId: publicIdSchema,
   slatePosition: z.number().int().positive(),
   slateSize: z.number().int().positive(),
   item: catalogItemSchema,
+  /** Why the recommender chose this item. Null on a top-rated slate. */
+  reason: z.string().nullable(),
+  score: recommendationScoreSchema,
 });
 export type ExposureCard = z.infer<typeof exposureCardSchema>;
 
@@ -181,6 +201,8 @@ export const rankedItemSchema = z.object({
   item: catalogItemSchema,
   /** Why the recommender chose this item. Null on a top-rated slate. */
   reason: z.string().nullable(),
+  /** What the recommender predicted, so a round can be judged against it. */
+  score: recommendationScoreSchema,
   yes: z.number().int().nonnegative(),
   responses: z.number().int().nonnegative(),
   eligible: z.number().int().positive(),

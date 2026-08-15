@@ -329,6 +329,14 @@ describe('multi-round rooms', () => {
     for (const entry of slate) {
       expect(entry.reason).not.toBeNull();
     }
+    // Scored picks keep the number that chose them, so a round can be judged
+    // against what the recommender predicted. Exploration slots carry none.
+    const scored = slate.filter((entry) => entry.score !== null);
+    expect(scored.length).toBeGreaterThan(0);
+    for (const entry of scored) {
+      expect(entry.score).toBeGreaterThanOrEqual(0);
+      expect(entry.score).toBeLessThanOrEqual(1);
+    }
   });
 
   it('steers the second round toward what the group liked', () => {

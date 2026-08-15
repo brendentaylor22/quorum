@@ -41,7 +41,45 @@ export interface SlateItemRow {
   runtimeMinutes: number | null;
   contentRating: string | null;
   imageRef: string | null;
+  genres: string[];
   reason: string | null;
+  /** Recommender score, 0-1. Null on a top-rated or exploration pick. */
+  score: number | null;
+}
+
+interface RawSlateItem extends Omit<SlateItemRow, 'genres'> {
+  /**
+   * Genre names joined by the ASCII unit separator, which no genre name can
+   * contain. A single subquery keeps the slate read to one statement.
+   */
+  genres: string | null;
+}
+
+const GENRE_SEPARATOR = '\u001F';
+
+/**
+ * Slate columns, including the film's genres. The join is expressed as a
+ * correlated subquery so one row comes back per slate item rather than one per
+ * genre, which keeps `LIMIT 1` on the next-card query correct.
+ */
+const slateColumns = `ri.id AS roomItemId, ri.slate_position AS slatePosition,
+  c.id AS catalogItemId, c.provider_ref AS providerRef, c.title AS title,
+  c.release_year AS releaseYear, c.synopsis AS synopsis,
+  c.runtime_minutes AS runtimeMinutes, c.content_rating AS contentRating,
+  c.image_ref AS imageRef, ri.reason AS reason, ri.score AS score,
+  (SELECT group_concat(g.name, char(31))
+     FROM catalog_item_genres cig
+     JOIN catalog_genres g ON g.id = cig.genre_id
+    WHERE cig.catalog_item_id = c.id) AS genres`;
+
+function toSlateItem(row: RawSlateItem): SlateItemRow {
+  return {
+    ...row,
+    genres:
+      row.genres === null || row.genres === ''
+        ? []
+        : row.genres.split(GENRE_SEPARATOR),
+  };
 }
 
 /** How a round's slate was chosen. Persisted so a slate can be explained. */
@@ -391,8 +429,15 @@ export interface StartRoundInput {
   catalogVersion: string;
   strategy: SlateStrategy;
   algorithmVersion: string | null;
-  /** Catalog ids in slate order, each with an optional selection reason. */
-  slate: readonly { catalogItemId: number; reason: string | null }[];
+  /**
+   * Catalog ids in slate order, each with the reason and score that put it
+   * there. Both are null on a top-rated slate.
+   */
+  slate: readonly {
+    catalogItemId: number;
+    reason: string | null;
+    score: number | null;
+  }[];
   eligibleCount: number;
   startedAt: string;
   expiresAt: string;
@@ -409,8 +454,8 @@ export function startRound(
   input: StartRoundInput,
 ): RoundRow {
   const insertItem = database.prepare(
-    `INSERT INTO room_items (room_id, round_id, catalog_item_id, slate_position, reason)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO room_items (room_id, round_id, catalog_item_id, slate_position, reason, score)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   return database.transaction(() => {
     const updated = database
@@ -456,6 +501,7 @@ export function startRound(
         entry.catalogItemId,
         index + 1,
         entry.reason,
+        entry.score,
       );
     });
     const round = findRoundById(database, roundId);
@@ -570,19 +616,17 @@ export function listSlate(
   database: QuorumDatabase,
   roundId: number,
 ): SlateItemRow[] {
-  return database
-    .prepare(
-      `SELECT ri.id AS roomItemId, ri.slate_position AS slatePosition,
-              c.id AS catalogItemId, c.provider_ref AS providerRef, c.title AS title,
-              c.release_year AS releaseYear, c.synopsis AS synopsis,
-              c.runtime_minutes AS runtimeMinutes, c.content_rating AS contentRating,
-              c.image_ref AS imageRef, ri.reason AS reason
+  return (
+    database
+      .prepare(
+        `SELECT ${slateColumns}
          FROM room_items ri
          JOIN catalog_items c ON c.id = ri.catalog_item_id
         WHERE ri.round_id = ?
         ORDER BY ri.slate_position`,
-    )
-    .all(roundId) as SlateItemRow[];
+      )
+      .all(roundId) as RawSlateItem[]
+  ).map(toSlateItem);
 }
 
 export function countSlate(database: QuorumDatabase, roundId: number): number {
@@ -598,13 +642,9 @@ export function nextUnconfirmedItem(
   participantId: number,
   roundId: number,
 ): SlateItemRow | undefined {
-  return database
+  const row = database
     .prepare(
-      `SELECT ri.id AS roomItemId, ri.slate_position AS slatePosition,
-              c.id AS catalogItemId, c.provider_ref AS providerRef, c.title AS title,
-              c.release_year AS releaseYear, c.synopsis AS synopsis,
-              c.runtime_minutes AS runtimeMinutes, c.content_rating AS contentRating,
-              c.image_ref AS imageRef, ri.reason AS reason
+      `SELECT ${slateColumns}
          FROM room_items ri
          JOIN catalog_items c ON c.id = ri.catalog_item_id
         WHERE ri.round_id = ?
@@ -616,7 +656,8 @@ export function nextUnconfirmedItem(
         ORDER BY ri.slate_position
         LIMIT 1`,
     )
-    .get(roundId, participantId) as SlateItemRow | undefined;
+    .get(roundId, participantId) as RawSlateItem | undefined;
+  return row === undefined ? undefined : toSlateItem(row);
 }
 
 /**

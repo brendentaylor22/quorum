@@ -27,14 +27,32 @@ export function Results({ results }: { results: ResultsResponse }) {
             </span>
             <span className="title">
               <span className="name">{item.item.title}</span>
+              {item.item.year === null ? null : (
+                <span className="year">{item.item.year}</span>
+              )}
               {item.match ? <span className="badge">Match</span> : null}
             </span>
             <span className="score">
               {item.approvalPct}% ({item.yesFraction})
             </span>
-            <span className="coverage">{item.coveragePct}% answered</span>
-            {item.reason === null ? null : (
-              <span className="reason">{item.reason}</span>
+            <span className="coverage">
+              {item.coveragePct}% answered
+              {item.item.genres.length === 0
+                ? ''
+                : ` · ${item.item.genres.join(', ')}`}
+            </span>
+            {item.reason === null && item.score === null ? null : (
+              <span className="reason">
+                {item.score === null ? null : (
+                  <span className="predicted">
+                    Predicted {item.score}%
+                    {/* The gap between prediction and outcome is the whole
+                        point of showing it: it says whether the recommender
+                        is learning anything from the group's swipes. */}
+                  </span>
+                )}
+                {item.reason}
+              </span>
             )}
           </li>
         ))}

@@ -185,7 +185,12 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
         </button>
       ) : null}
       {room.state === 'VOTING' && room.card !== null ? (
-        <SwipeDeck card={room.card} busy={busy} onChoice={onChoice} />
+        <SwipeDeck
+          card={room.card}
+          round={room.round}
+          busy={busy}
+          onChoice={onChoice}
+        />
       ) : null}
       {room.state === 'VOTING' && playing && room.card === null ? (
         <p className="lede">

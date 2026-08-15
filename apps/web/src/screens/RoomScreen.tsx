@@ -103,12 +103,12 @@ export function RoomScreen({ roomId }: { roomId: string }) {
         </section>
       ) : null}
       {room.state === 'VOTING' && room.card !== null ? (
-        <>
-          {room.round !== null && room.round.roundNumber > 1 ? (
-            <p className="hint">Round {room.round.roundNumber}</p>
-          ) : null}
-          <SwipeDeck card={room.card} busy={busy} onChoice={onChoice} />
-        </>
+        <SwipeDeck
+          card={room.card}
+          round={room.round}
+          busy={busy}
+          onChoice={onChoice}
+        />
       ) : null}
       {room.state === 'VOTING' && room.card === null ? (
         <section>
