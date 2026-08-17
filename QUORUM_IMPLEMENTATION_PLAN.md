@@ -1,20 +1,23 @@
 # Quorum implementation plan
 
-Status: in progress — Phases 0 and 1 complete, Phase 2 substantially complete, Phase 3 is next  
-Updated: 2026-08-14
+Status: in progress — Phases 0–4 essentially complete; the outstanding work is Phase 5 hardening and real-infrastructure evidence  
+Updated: 2026-08-17
 
 ## 0. Where the build actually is
 
 | Phase | State |
 |---|---|
 | 0 — Product contract and threat model | Complete. See `docs/phase-0/`, `docs/adr/`, `tests/contracts/ranking.examples.json`. |
-| 1 — Secure foundation and CI image | Code and local evidence complete. See `docs/phase-1/`. Fresh-VM, GHCR, and tunnel evidence still pending operator infrastructure; that does not block Phase 2. |
-| 2 — Local browser-testable MVP | **Active.** Step 2a complete: real schema, ranking, contracts, fixture catalog, room routes, and React screens run end to end at `localhost`. See `docs/phase-2/`. Step 2b is done apart from presentation polish and a scheduled expiry job. |
-| 3+ | Not started. |
+| 1 — Secure foundation and CI image | Code and local evidence complete. See `docs/phase-1/`. Fresh-VM, GHCR, and tunnel evidence still pending real operator infrastructure. |
+| 2 — Local browser-testable MVP | Complete. Rooms, private voting, gestures, reconnect, results, and the solo path all run end to end under Playwright. See `docs/phase-2/`. |
+| 3 — Abuse resistance and web hardening | Complete, plus the open-source release work the original plan never had. See `docs/phase-3/`. |
+| 4 — Movie data and private pilot | Code complete: TMDB importer, catalog-refresh container, group recommender, multi-round rooms. See `docs/phase-4/`. The pilot itself — real phones over a real hostname — is not done. |
+| 5 — MVP release hardening | **Next.** Load test, backup encryption and restore drill, upgrade/rollback drill, operational view, accessibility pass. |
+| 6+ | Not started. |
 
-**Current priority: get a working Quorum playable in a local browser.** Deployment, real catalog data, and abuse resistance come after that. Phase 2 below is written to make that the shortest honest path.
+**Current priority: run it on real infrastructure.** Every phase up to 4 is written and tested; what is missing is evidence from a real deployment rather than more code. The Phase 1 exit gate and the Phase 4 pilot gate are the two things standing between this and a first public release.
 
-The one thing not deferred is *structural* security — see "Security split" under Phase 2. Capability tokens, server-authoritative voting, and room-scoped authorization are cheap to build in now and expensive to retrofit, because they shape the schema and every route. Additive controls (rate limits, Turnstile, CSP, security headers) genuinely can wait, and now do.
+The plan below is kept as written, including phases now complete, because the reasoning it records is why the code looks the way it does. Where implementation contradicted the plan, the contradiction is noted rather than edited away.
 
 ## 1. Product goal
 
@@ -265,7 +268,7 @@ Exit gate:
 - Backup restores into clean volume and passes integrity plus record-count checks.
 - Critical/high image findings are resolved or explicitly risk-accepted with expiry.
 
-### Phase 2 — Local browser-testable MVP — ACTIVE
+### Phase 2 — Local browser-testable MVP — COMPLETE
 
 Goal: a real, playable Quorum running at `localhost` in a browser, with fixture movies and no deployment, no external services, and no abuse controls. This is the phase that turns the skeleton into the product.
 
@@ -302,13 +305,18 @@ Smallest thing that proves the loop. Do this before breadth.
 
 Exit: two browser windows complete a room end to end by hand.
 
-#### Step 2b — Make it a real product — IN PROGRESS
+#### Step 2b — Make it a real product — COMPLETE
 
-Done: lobby list by short polling, swipe gestures with keyboard and accessible
-Yes/No buttons, reconnect and resume, host early close, lazy room expiry,
-results view, mobile-first styling, the solo path, and a Playwright suite that
-drives four isolated browser contexts plus a host page through all 20 swipes.
-Remaining: a wireframe-faithful progress view and a scheduled expiry job.
+Lobby list by short polling, swipe gestures with keyboard and accessible Yes/No
+buttons, reconnect and resume, host early close, room expiry, results view,
+mobile-first styling, the solo path, and a Playwright suite that drives four
+isolated browser contexts plus a host page through all 20 swipes.
+
+Two items outlived this phase. Room expiry was lazy-only until Phase 3 added the
+scheduled sweep. The "wireframe-faithful progress view" was never built as
+drawn: the roster grew per-participant progress bars instead, which does the
+same job inside the screen people are already looking at. The wireframe is the
+older document; the code is the decision.
 
 - Lobby with live-ish participant list by short polling.
 - Swipe gestures, plus keyboard and accessible Yes/No buttons.
@@ -331,9 +339,22 @@ Exit gate:
 
 TMDB, Cloudflare, containers, rate limits, Turnstile, CSP, WebSockets, animations, PWA. Phase 2 runs from `npm run dev` against a local file. The Phase 1 image and Compose topology stay as they are and get re-validated in Phase 4.
 
-### Phase 3 — Abuse resistance and web hardening
+### Phase 3 — Abuse resistance and web hardening — COMPLETE
 
-Goal: make the working MVP safe to expose, without changing its data model or route contracts.
+Delivered as written except for Turnstile, which was dropped deliberately: it is
+a Cloudflare-coupled control, and Quorum now supports deployments with no
+Cloudflare in the path. Rate limits and the rooms-per-source cap cover the abuse
+case; an operator who does front Quorum with Cloudflare can enable Turnstile at
+the edge without the application knowing.
+
+This phase also absorbed the open-source release work the plan never
+anticipated, because it predates the decision to ship Quorum as a
+self-installable image: licence, security policy, contribution guide, a second
+ingress shape that needs no Cloudflare account, a self-hosting guide with a full
+configuration reference, and the privacy notice and source offer in the UI. See
+`docs/phase-3/`.
+
+Original goal: make the working MVP safe to expose, without changing its data model or route contracts.
 
 Deliverables:
 
@@ -352,9 +373,20 @@ Exit gate:
 - No secret or personal data appears in logs.
 - Phase 2 browser tests still pass unchanged.
 
-### Phase 4 — Movie data and private pilot
+### Phase 4 — Movie data and private pilot — CODE COMPLETE, PILOT OUTSTANDING
 
-Goal: replace fixtures in runtime with a controlled real catalog, deploy privately, and test with real users.
+The importer, quality filters, `catalog-refresh`, and last-good-catalog
+behaviour are built and tested, and the phase gained something the plan did not
+foresee: multi-round rooms with a content-based group recommender, because a
+single slate of 20 turns out not to be enough when nothing appeals. See
+`docs/phase-4/`.
+
+What is genuinely outstanding is the pilot: two phones plus a host over a public
+hostname, the origin proved to have no public or LAN listener, egress proved
+blocked from the serving container, and the Phase 1 exit gate certified on real
+infrastructure. That is deployment evidence, not code.
+
+Original goal: replace fixtures in runtime with a controlled real catalog, deploy privately, and test with real users.
 
 Deliverables:
 
@@ -481,23 +513,27 @@ Operations:
 
 ## 10. Next implementation slice
 
-Phases 0 and 1 are done. The next slice is Phase 2 step 2a — the thinnest path to something openable in a browser, in this order:
+Phases 0–3 are done and Phase 4's code is done. Everything remaining needs a
+real machine rather than more application code, in this order:
 
-1. Real schema migration replacing `foundation_records`.
-2. `packages/ranking` driven by `tests/contracts/ranking.examples.json`. Pure function, no I/O, testable immediately.
-3. `packages/contracts` request/response schemas.
-4. Fixture catalog loader over the existing 20 movies.
-5. Create room, returning separate unguessable invite and host capabilities.
-6. Join two participants with signed room-scoped sessions.
-7. Start room: freeze membership, persist fixed slate.
-8. Persist one swipe per participant per movie, idempotent by exposure ID.
-9. Complete room and serve approval-ranked results.
-10. Minimal React screens for each route, wired to `npm run dev`.
-11. Playwright over two browser contexts.
+1. **Stand up one real instance.** Either ingress shape. Set the token secret,
+   pin the image digest, set `QUORUM_TRUST_PROXY`, run `doctor`.
+2. **Certify the Phase 1 exit gate on it.** Fresh host pulls by digest and
+   passes `doctor`; no host port, privileged container, Docker socket, shared
+   network, or unrelated mount; stop/start preserves the database; a backup
+   restores into a clean volume and passes integrity and record counts.
+3. **Import a real catalog** and confirm the last-good-catalog behaviour by
+   taking TMDB away mid-room.
+4. **Run the pilot.** Two phones plus a host, one real room over a public
+   hostname, through to a ranked result and a second round.
+5. **Prove the isolation claims from inside the container** — no route to the
+   host, LAN, Docker API, cloud metadata, or arbitrary Internet.
+6. **Then Phase 5:** load test at the declared limit, backup encryption and an
+   off-host copy, a restore drill, upgrade and rollback by digest, the
+   operational view, and the accessibility and mobile-browser pass.
 
-Steps 1–4 have no HTTP surface and can be fully unit tested before any route exists. Step 10 is where it first becomes browser-testable; do not defer it to the end of the phase.
-
-Avoid TMDB, Cloudflare, containers, Google, recommendations, WebSockets, and elaborate animation until this slice works. It validates the product loop, scoring contract, schema, and persistence before any external integration or hardening work.
+The first public release is gated on 2, 4, and 5 — not on new features. Resist
+adding any until an instance has survived a weekend of real use.
 
 ## 11. Current external references
 

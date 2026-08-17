@@ -1,6 +1,6 @@
 # Threat model
 
-Updated: 2026-08-11
+Updated: 2026-08-17
 
 ## Scope and trust boundaries
 
@@ -40,6 +40,41 @@ Trust ends at every arrow. Browser state, forwarded headers, container image, ex
 | T14 | Result manipulation | Client totals or early scores bias/alter outcome | Canonical server interactions only; results hidden until complete; deterministic ranking contract | Ranking examples; pre-completion authorization test |
 | T15 | Replay/race | Concurrent swipe/start/close causes double or invalid state | Idempotency by exposure; unique constraints; state-checked transactions; monotonic lifecycle | Concurrency integration and fault tests |
 | T16 | Privacy over-retention | Temporary identity/actions persist or reappear after restore | Scheduled purge; bounded backups; restore reapplies expiry; no cross-room identity | Purge test; expired-backup restore test |
+
+## Implementation status of the required controls
+
+Recorded here so the table above stays a statement of what is required, and this
+stays a statement of what is built.
+
+| ID | Built | Not built |
+|---|---|---|
+| T01, T01a | Entropy, keyed hashes, uniform failures, rate limits | — |
+| T02 | Separate capabilities and endpoints; host secret never in invite or session | — |
+| T03 | Session-derived identity, ownership checks, unique exposure interaction, transactions | — |
+| T04 | Unguessable URLs, uniform responses, no list or search endpoint, request caps | Cloudflare rate control is operator-dependent; Quorum no longer assumes Cloudflare |
+| T05 | Body, participant, and room-creation caps; per-source and per-session rate limits; bounded queries | Load test at the declared limit (Phase 5) |
+| T06 | No user URL fetch, fixed TMDB origin, serving container on an `internal` network with no egress | Egress proxy or firewall allowlisting is operator infrastructure; not yet proved on a real host |
+| T07 | Text rendering, schema and control-character validation, CSP with no inline script or `eval` | — |
+| T08 | `SameSite` cookies, exact same-origin check, required request header, JSON content type | — |
+| T09 | Non-root, read-only root, dropped capabilities, no socket or shared network, pid/memory/cpu limits | Dedicated-VM boundary and runtime verification on a real host |
+| T10 | Pinned actions and base images, least permissions, scans, SBOM, digest deploy | Operator provenance verification on a real deployment |
+| T11 | Secret files not variables, capability redaction in logs, secret scan in CI | Browser-bundle and image-history inspection as a standing check |
+| T12 | SQLite backup API, integrity and record-count checks, restore refusing an existing volume | Encryption, off-host copy, and a restore drill (Phase 5) |
+| T13 | Tokens censored from logs; `Referrer-Policy: no-referrer` as both header and meta tag; proxy access log disabled | — |
+| T14 | Canonical server interactions, results hidden until complete, deterministic ranking contract | — |
+| T15 | Exposure idempotency, unique constraints, state-checked transactions, monotonic lifecycle | — |
+| T16 | Scheduled expiry and purge, operator purge command, no cross-room identity | Restore-reapplies-expiry drill (Phase 5) |
+
+**Turnstile is not implemented**, and T04/T05 no longer assume it. It is a
+Cloudflare-coupled control, and Quorum supports deployments with no Cloudflare
+in the path; rate limits and the rooms-per-source cap carry that load instead.
+An operator fronting Quorum with Cloudflare can enable it at the edge without
+the application knowing.
+
+**Source identity is operator configuration.** `QUORUM_TRUST_PROXY` decides
+whose `X-Forwarded-For` is believed. Unset behind a proxy, every caller shares
+one rate-limit bucket; set without a trusted proxy in front, the limits are
+forgeable. The stop condition below therefore has a concrete setting behind it.
 
 ## Abuse cases and stop conditions
 

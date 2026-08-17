@@ -1,9 +1,9 @@
 # Phase 2 — Local browser-testable MVP
 
-Updated: 2026-08-14
+Updated: 2026-08-17
 
-Status: step 2a complete and playable in a browser. Step 2b is partially done;
-outstanding items are listed at the end.
+Status: complete. Both steps are done; the two items this document once listed
+as outstanding are resolved at the end.
 
 ## Run it
 
@@ -107,9 +107,17 @@ Compose passes a keyed secret through `QUORUM_TOKEN_SECRET_FILE`
 (`deploy/secrets/token-secret`). `scripts/quorumctl start` refuses to run without
 it. Rotating that secret invalidates every live invite, host link, and session.
 
-## Not done yet
+## What was outstanding, and how it resolved
 
-- Wireframe-faithful progress view and visual polish pass.
-- Scheduled expiry job; today expiry is applied lazily on API requests.
-- Everything explicitly deferred to Phase 3: rate limits, Turnstile, CSP and
-  security headers, structured redacted logs, and the remaining hard caps.
+- **Scheduled expiry.** Done in Phase 3. Expiry was lazy-only, applied on API
+  requests, which meant a quiet instance kept expired rooms forever. A sweep now
+  runs at boot and every `QUORUM_RETENTION_SWEEP_MINUTES`, and expired rooms are
+  deleted a day later along with their participants, exposures, and
+  interactions. See [phase 3](../phase-3/README.md#5--scheduled-expiry-and-operator-purge--complete).
+- **Wireframe-faithful progress view.** Not built, deliberately. The roster grew
+  per-participant progress bars instead, which does the same job inside the
+  screen people are already looking at rather than adding a screen to navigate
+  to. The wireframe is the older document; the code is the decision.
+- **Everything deferred to Phase 3** — rate limits, CSP and security headers,
+  redacted logs, remaining caps — is done, except Turnstile, which was dropped
+  on purpose because Quorum no longer requires Cloudflare in the path.

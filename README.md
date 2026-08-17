@@ -10,9 +10,12 @@ the host opens another round of 20 chosen from what the group has already said.
 No accounts, no email, no profiles. A room is a pair of unguessable links that
 expire.
 
-Current status: playable end to end. Rooms, private voting, ranked results,
-multi-round recommendations, and a real TMDB catalog all run locally and in the
-deployed container. See [where the build is](#project-status).
+Current status: playable end to end, and installable. Rooms, private voting,
+ranked results, multi-round recommendations, a real TMDB catalog, rate limits,
+and scheduled retention all run locally and in the container. Not yet proved on
+real infrastructure — see [where the build is](#project-status).
+
+Self-hosting it: [docs/self-hosting.md](docs/self-hosting.md).
 
 ---
 
@@ -187,6 +190,17 @@ room. Details, obligations, and configuration:
   digests.
 - **Secrets from files**, not environment variables, so credentials stay out of
   the process table, `docker inspect`, and log lines.
+- **No capability in a log line.** Tokens live in URL paths, so the request
+  serializer censors the token segment before anything is written, and the
+  host header, session cookie, and `Set-Cookie` are redacted too.
+- **Rate limits sized for a household.** Room reads and swipes are charged to
+  the participant session rather than the address, because everyone in a room is
+  usually on the same wifi. Room creation is capped at ten per source per day.
+- **A content security policy** with no inline script and no `eval`, plus
+  `no-referrer`, `frame-ancestors 'none'`, and no device permissions at all.
+- **Retention that runs itself.** A scheduled sweep expires rooms and then
+  deletes them — participants, exposures, interactions, and all — 24 hours
+  later, whether or not anyone visits.
 
 Threat model: [docs/phase-0/threat-model.md](docs/phase-0/threat-model.md).
 Retention and abuse: [docs/phase-0/retention-and-abuse.md](docs/phase-0/retention-and-abuse.md).
@@ -339,15 +353,24 @@ Procedures: [release runbook](docs/phase-1/release-runbook.md),
 
 ## Project status
 
-| Phase                                  | State                                                                                                 |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| 0 — Product contract and threat model  | Complete                                                                                              |
-| 1 — Secure foundation and CI image     | Code and local evidence complete; fresh-VM, GHCR, and tunnel evidence pending operator infrastructure |
-| 2 — Local browser-testable MVP         | Step 2a complete, step 2b substantially complete                                                      |
-| 3 — Abuse resistance and web hardening | Not started (rate limits, Turnstile, CSP, security headers)                                           |
-| 4 — Movie data and private pilot       | Catalog ingestion and recommendations built                                                           |
+| Phase                                  | State                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 0 — Product contract and threat model  | Complete                                                                                                       |
+| 1 — Secure foundation and CI image     | Code and local evidence complete; fresh-host, GHCR, and ingress evidence pending real infrastructure           |
+| 2 — Local browser-testable MVP         | Complete                                                                                                       |
+| 3 — Abuse resistance and web hardening | Complete — rate limits, security headers and CSP, log redaction, scheduled retention, and the OSS release work |
+| 4 — Movie data and private pilot       | Code complete; the pilot on real phones over a real hostname is not done                                       |
+| 5 — MVP release hardening              | Next: load test, backup encryption and restore drill, rollback drill, operational view, accessibility          |
 
 Known gaps, stated plainly:
+
+- **Nothing here has been proved on real infrastructure yet.** Everything is
+  tested locally and in CI; the Phase 1 exit gate and the Phase 4 pilot both
+  need a real host, and neither has had one.
+- No load test has been run, so the "20 participants, 20 concurrent rooms"
+  support target is a design intent rather than a measurement.
+- Backups are unencrypted and local; no restore drill has been performed on a
+  real deployment.
 
 - The recommender's blend is a reasoned default, not a measured winner — offline
   replay evaluation is not built.
@@ -376,7 +399,8 @@ Known gaps, stated plainly:
 
 - [Phase 1 evidence](docs/phase-1/README.md) · [operator](docs/phase-1/operator-runbook.md) · [release](docs/phase-1/release-runbook.md) · [rollback](docs/phase-1/rollback-runbook.md)
 - [Dependency security policy](docs/phase-1/dependency-security-policy.md)
-- [Phase 2 evidence](docs/phase-2/README.md)
+- [Self-hosting guide](docs/self-hosting.md) — both ingress shapes and every configuration variable
+- [Phase 2 evidence](docs/phase-2/README.md) · [Phase 3 evidence](docs/phase-3/README.md)
 - [Catalog ingestion](docs/phase-4/catalog-ingestion.md) · [group recommendations](docs/phase-4/recommendations.md)
 
 **Executable specification**
@@ -387,6 +411,18 @@ Known gaps, stated plainly:
 
 ---
 
+## Licence
+
+Quorum is free software under [AGPL-3.0-or-later](LICENSE). Run it, change it,
+share it. If you run a modified copy as a service for other people, you owe them
+your changes — set `QUORUM_SOURCE_URL` so the footer points at your source.
+
+Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports:
+[SECURITY.md](SECURITY.md) — privately, never in a public issue.
+
 Movie data and images from [TMDB](https://www.themoviedb.org/). This product
-uses the TMDB API but is not endorsed or certified by TMDB. Non-commercial use
-only. Never publish a database backup — it contains bulk provider metadata.
+uses the TMDB API but is not endorsed or certified by TMDB. The licence above
+covers Quorum's code and says nothing about movie metadata: if you import a real
+catalog you register your own TMDB credential and accept their terms directly,
+including their non-commercial restriction. Never publish a database backup — it
+contains bulk provider metadata.
