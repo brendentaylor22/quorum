@@ -21,13 +21,14 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace @quorum/contracts --workspace @quorum/ranking --workspace @quorum/recommend --workspace @quorum/catalog --workspace @quorum/database --workspace @quorum/tmdb && npm run build --workspace @quorum/web && npm run build --workspace @quorum/api",
+    "build:packages": "npm run build --workspace @quorum/contracts --workspace @quorum/ranking --workspace @quorum/recommend --workspace @quorum/catalog --workspace @quorum/database --workspace @quorum/tmdb",
+    "build": "npm run build:packages && npm run build --workspace @quorum/web && npm run build --workspace @quorum/api",
     "dev": "node scripts/dev.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "npm run build --workspace @quorum/contracts --workspace @quorum/ranking --workspace @quorum/recommend --workspace @quorum/catalog --workspace @quorum/database --workspace @quorum/tmdb && npm run typecheck --workspaces --if-present && tsc -p tests/tsconfig.json",
-    "pretest": "npm run build --workspace @quorum/contracts --workspace @quorum/ranking --workspace @quorum/recommend --workspace @quorum/catalog --workspace @quorum/database --workspace @quorum/tmdb",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present && tsc -p tests/tsconfig.json",
+    "pretest": "npm run build:packages",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
