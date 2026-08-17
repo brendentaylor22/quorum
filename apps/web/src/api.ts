@@ -2,6 +2,7 @@ import type {
   CatalogSource,
   CreateRoomResponse,
   ErrorCode,
+  InstanceInfo,
   ResultsResponse,
   RoomView,
 } from '@quorum/contracts';
@@ -70,6 +71,9 @@ async function request<T>(
 export const api = {
   catalogSource: async (): Promise<CatalogSource> =>
     request<CatalogSource>('/api/catalog'),
+
+  instance: async (): Promise<InstanceInfo> =>
+    request<InstanceInfo>('/api/instance'),
 
   createRoom: async (): Promise<CreateRoomResponse> =>
     request<CreateRoomResponse>('/api/rooms', { method: 'POST', body: {} }),

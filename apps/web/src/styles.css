@@ -764,3 +764,52 @@ main.in-room {
     transition: none;
   }
 }
+
+/*
+ * The privacy notice is the one screen that is mostly words. Everything else in
+ * Quorum is a card or a list, so the prose defaults deliberately do not apply
+ * anywhere else: a comfortable reading measure would be wrong on a voting card.
+ */
+.prose {
+  max-width: 38rem;
+  line-height: 1.65;
+}
+
+.prose h2 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  letter-spacing: -0.02em;
+}
+
+.prose h3 {
+  margin: 1.75rem 0 0.5rem;
+  color: #c8cad2;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.prose p {
+  margin: 0 0 0.9rem;
+  color: #d7d9e0;
+}
+
+.prose ul {
+  margin: 0 0 0.9rem;
+  padding-left: 1.1rem;
+  color: #d7d9e0;
+}
+
+.prose li {
+  margin-bottom: 0.5rem;
+}
+
+.prose strong {
+  color: #f7f4ee;
+}
+
+.prose a {
+  color: inherit;
+  /* Long source URLs must not push a phone into horizontal scroll. */
+  overflow-wrap: anywhere;
+}

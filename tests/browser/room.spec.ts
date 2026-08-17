@@ -111,6 +111,11 @@ test('the host can keep voting with a recommended second round', async ({
   browser,
   page,
 }) => {
+  // Two participants through two full rounds is eighty real votes in a real
+  // browser — comfortably the heaviest test here, and the first to blow the
+  // default budget when the machine is doing anything else. The length is the
+  // point of the test, so it gets more time rather than fewer votes.
+  test.slow();
   const { invitePath, hostPath } = await createRoom(page);
   const ana = await joinAs(browser, invitePath, 'Ana');
   const bo = await joinAs(browser, invitePath, 'Bo');
@@ -349,4 +354,21 @@ test('an invalid invite reveals nothing', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'This invite is not available' }),
   ).toBeVisible();
+});
+
+test('the privacy notice and source offer are reachable from any page', async ({
+  page,
+}) => {
+  await page.goto('/');
+
+  // Both obligations live in the footer: the notice a participant is owed
+  // before they type a name, and the AGPL's offer of source.
+  await page.getByRole('link', { name: 'What Quorum knows about you' }).click();
+
+  await expect(
+    page.getByRole('heading', { name: 'What Quorum knows about you' }),
+  ).toBeVisible();
+  await expect(page.getByText('No account, no email')).toBeVisible();
+  await expect(page.getByText('AGPL-3.0-or-later')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Source' })).toBeVisible();
 });
