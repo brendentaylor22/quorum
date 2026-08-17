@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "description": "Private group movie voting",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brendentaylor22/quorum.git"
+  },
+  "homepage": "https://github.com/brendentaylor22/quorum#readme",
+  "bugs": {
+    "url": "https://github.com/brendentaylor22/quorum/issues"
+  },
   "engines": {
     "node": ">=24 <25"
   },

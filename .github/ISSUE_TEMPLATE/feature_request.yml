@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest something Quorum should do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [implementation plan](https://github.com/brendentaylor22/quorum/blob/main/QUORUM_IMPLEMENTATION_PLAN.md)
+        first. Accounts, series, streaming-provider filters, WebSockets, PWA, and
+        collaborative filtering are deferred rather than forgotten, and the plan
+        says why.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Quorum makes hard or impossible?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: How it fits the existing contract
+      description: |
+        Quorum has invariants it will not trade away: server-authoritative voting,
+        no account required, no egress from the serving container, room-scoped
+        anonymous history, and results that stay hidden until a room completes.
+        If your proposal touches one of those, say how.
