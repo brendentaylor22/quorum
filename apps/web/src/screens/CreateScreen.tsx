@@ -1,14 +1,10 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import { rememberInvite } from '../hooks.js';
-import { HostScreen } from './HostScreen.js';
 
 export function CreateScreen() {
-  const [hostToken, setHostToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-
-  if (hostToken !== null) return <HostScreen hostToken={hostToken} />;
 
   return (
     <section aria-labelledby="create-heading">
@@ -17,6 +13,11 @@ export function CreateScreen() {
         Everyone swipes the same 20 movies in private. Quorum ranks them by
         group approval when voting ends.
       </p>
+      <ol className="steps">
+        <li>Create the room and share the invite link.</li>
+        <li>Everyone picks a name — no account, no email.</li>
+        <li>You start voting when the group is in.</li>
+      </ol>
       <button
         type="button"
         disabled={busy}
@@ -27,10 +28,10 @@ export function CreateScreen() {
             .createRoom()
             .then((created) => {
               rememberInvite(created.roomId, created.inviteToken);
-              // The host link is the room's private address: put it in the URL
-              // so a refresh or a bookmark returns to these controls.
-              globalThis.history.replaceState(null, '', created.hostPath);
-              setHostToken(created.hostToken);
+              // The host link is the room's private address, so navigate to it
+              // rather than rendering the host screen behind the landing URL:
+              // a refresh or a bookmark then returns to these same controls.
+              globalThis.location.assign(created.hostPath);
             })
             .catch((caught: unknown) => {
               setNotice(

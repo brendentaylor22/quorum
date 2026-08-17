@@ -2,6 +2,11 @@ import type { ResultsResponse } from '@quorum/contracts';
 import { Poster } from './SwipeDeck.js';
 
 export function Results({ results }: { results: ResultsResponse }) {
+  const [top] = results.items;
+  // A tie for first is common in a small room, so the verdict counts the
+  // shared rank rather than claiming a single winner that is not one.
+  const tied = results.items.filter((item) => item.rank === 1).length;
+
   return (
     <section aria-labelledby="results-heading">
       <h2 id="results-heading">
@@ -10,6 +15,23 @@ export function Results({ results }: { results: ResultsResponse }) {
           ? ` — round ${results.roundNumber.toString()}`
           : ''}
       </h2>
+      {top === undefined ? null : (
+        <p className="verdict">
+          {top.approvalPct === 0 ? (
+            'Nothing here appealed to anyone.'
+          ) : tied > 1 ? (
+            <>
+              <strong>{tied} films tied</strong> at {top.approvalPct}% — pick
+              between them, or run another round.
+            </>
+          ) : (
+            <>
+              <strong>{top.item.title}</strong> came top at {top.approvalPct}%
+              {top.match ? ', and everyone said yes.' : '.'}
+            </>
+          )}
+        </p>
+      )}
       <p className="lede">
         {results.closedEarly
           ? 'The host closed voting early. People who did not answer still count in the totals.'

@@ -16,6 +16,25 @@ interface SwipeDeckProps {
 const DRAG_THRESHOLD_PX = 90;
 
 /**
+ * How far a touch must travel before its direction is treated as deliberate.
+ * Below this the gesture belongs to nobody yet, so neither the page nor the
+ * card acts on it.
+ */
+const AXIS_SLOP_PX = 12;
+
+interface DragState {
+  startX: number;
+  startY: number;
+  pointerId: number;
+  /**
+   * Which gesture this turned out to be. A touch starts undecided: `x` means
+   * the card has taken the pointer, and a vertical decision ends the drag
+   * outright so the browser keeps scrolling the page.
+   */
+  axis: 'undecided' | 'horizontal';
+}
+
+/**
  * Poster art, falling back to an initial tile when the catalog has no image
  * for the film or the image fails to load. The URL is built by the server, so
  * the client carries no knowledge of a provider's CDN.
@@ -92,7 +111,7 @@ export function Poster({
  */
 export function SwipeDeck({ card, round, busy, onChoice }: SwipeDeckProps) {
   const [offset, setOffset] = useState(0);
-  const dragOrigin = useRef<number | null>(null);
+  const drag = useRef<DragState | null>(null);
   const choiceRef = useRef(onChoice);
   choiceRef.current = onChoice;
 
@@ -111,10 +130,15 @@ export function SwipeDeck({ card, round, busy, onChoice }: SwipeDeckProps) {
     };
   }, []);
 
-  function endDrag() {
-    if (dragOrigin.current === null) return;
-    dragOrigin.current = null;
-    if (Math.abs(offset) >= DRAG_THRESHOLD_PX) {
+  /**
+   * `commit` is false when the browser took the gesture away from us — it
+   * started scrolling the page and sent `pointercancel`. A cancelled gesture
+   * is not a vote, however far the card had already moved.
+   */
+  function endDrag(commit: boolean) {
+    if (drag.current === null) return;
+    drag.current = null;
+    if (commit && Math.abs(offset) >= DRAG_THRESHOLD_PX) {
       onChoice(offset > 0 ? 'RIGHT' : 'LEFT');
     }
     setOffset(0);
@@ -142,15 +166,47 @@ export function SwipeDeck({ card, round, busy, onChoice }: SwipeDeckProps) {
         }}
         onPointerDown={(event) => {
           if (busy) return;
-          dragOrigin.current = event.clientX;
-          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = {
+            startX: event.clientX,
+            startY: event.clientY,
+            pointerId: event.pointerId,
+            // A mouse cannot scroll the page by dragging, so there is no
+            // competing gesture to arbitrate: take it as a swipe immediately.
+            axis: event.pointerType === 'mouse' ? 'horizontal' : 'undecided',
+          };
+          if (event.pointerType === 'mouse') {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
         }}
         onPointerMove={(event) => {
-          if (dragOrigin.current === null) return;
-          setOffset(event.clientX - dragOrigin.current);
+          const state = drag.current;
+          if (state === null) return;
+          const deltaX = event.clientX - state.startX;
+          const deltaY = event.clientY - state.startY;
+          if (state.axis === 'undecided') {
+            if (
+              Math.abs(deltaX) < AXIS_SLOP_PX &&
+              Math.abs(deltaY) < AXIS_SLOP_PX
+            ) {
+              return;
+            }
+            // Mostly vertical: this is the page being scrolled, not a vote.
+            // Dropping the drag leaves the browser's own pan untouched.
+            if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+              drag.current = null;
+              return;
+            }
+            state.axis = 'horizontal';
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
+          setOffset(deltaX);
         }}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+        onPointerUp={() => {
+          endDrag(true);
+        }}
+        onPointerCancel={() => {
+          endDrag(false);
+        }}
       >
         <Poster item={card.item} eager />
         <div className="card-body">
@@ -189,7 +245,31 @@ export function SwipeDeck({ card, round, busy, onChoice }: SwipeDeckProps) {
             </p>
           )}
         </div>
+        {/*
+          The stamp names the choice a release would make right now, so a drag
+          is legible before it is committed. Decorative: the buttons below
+          carry the same two choices for anyone not dragging.
+        */}
+        <span
+          className={stampClass('no', offset <= -DRAG_THRESHOLD_PX)}
+          aria-hidden="true"
+        >
+          No
+        </span>
+        <span
+          className={stampClass('yes', offset >= DRAG_THRESHOLD_PX)}
+          aria-hidden="true"
+        >
+          Yes
+        </span>
       </article>
+      <p className="hint deck-hint">
+        Drag the card, use the buttons, or press the left and right arrow keys.
+      </p>
+      {/*
+        Pinned to the bottom of the deck so the two choices stay in reach on a
+        phone however far down the synopsis the reader has scrolled.
+      */}
       <div className="choices">
         <button
           type="button"
@@ -212,9 +292,10 @@ export function SwipeDeck({ card, round, busy, onChoice }: SwipeDeckProps) {
           Yes
         </button>
       </div>
-      <p className="hint">
-        Drag the card, use the buttons, or press the left and right arrow keys.
-      </p>
     </section>
   );
+}
+
+function stampClass(choice: 'yes' | 'no', armed: boolean): string {
+  return `stamp stamp-${choice}${armed ? ' is-armed' : ''}`;
 }

@@ -1,30 +1,10 @@
-import type { ResultsResponse, RoomView } from '@quorum/contracts';
+import type { ResultsResponse } from '@quorum/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { usePoll } from '../hooks.js';
 import { Results } from './Results.js';
+import { Roster } from './Roster.js';
 import { SwipeDeck } from './SwipeDeck.js';
-
-function Participants({ room }: { room: RoomView }) {
-  return (
-    <section aria-labelledby="people-heading">
-      <h2 id="people-heading">In this room</h2>
-      <ul className="people">
-        {room.participants.map((participant) => (
-          <li key={participant.participantId}>
-            <span>{participant.displayName}</span>
-            {participant.isHost ? <span className="tag">Host</span> : null}
-            {room.state === 'VOTING' || room.state === 'COMPLETE' ? (
-              <span className="tag">
-                {participant.confirmedCount}/{room.slateSize}
-              </span>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
 
 export function RoomScreen({ roomId }: { roomId: string }) {
   const load = useCallback(async () => api.room(roomId), [roomId]);
@@ -98,7 +78,7 @@ export function RoomScreen({ roomId }: { roomId: string }) {
           <h2>Waiting for the host to start</h2>
           <p className="lede">
             Everyone who is here when the host starts votes on the same 20
-            movies.
+            movies. Nobody sees your answers — only the ranking at the end.
           </p>
         </section>
       ) : null}
@@ -124,7 +104,11 @@ export function RoomScreen({ roomId }: { roomId: string }) {
         </p>
       ) : null}
       {results === null ? null : <Results results={results} />}
-      <Participants room={room} />
+      <Roster
+        participants={room.participants}
+        slateSize={room.state === 'LOBBY' ? 0 : room.slateSize}
+        youId={room.you?.participantId ?? null}
+      />
     </>
   );
 }

@@ -243,6 +243,107 @@ test('an early close keeps non-responses in the denominator', async ({
   await expect(host.locator('.results li .badge')).toHaveCount(0);
 });
 
+test('a phone can scroll the voting card without voting', async ({
+  browser,
+  page,
+}) => {
+  const { invitePath, hostPath } = await createRoom(page);
+
+  // A viewport short enough that the card genuinely overflows it, which is the
+  // condition the gesture and the pinned buttons both exist for.
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 640 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  const phone = await context.newPage();
+  await phone.goto(invitePath);
+  await phone.getByLabel('Display name').fill('Thumb');
+  await phone.getByRole('button', { name: 'Join room' }).click();
+
+  const host = await browser.newPage();
+  await host.goto(hostPath);
+  await host.getByRole('button', { name: /Start voting/u }).click();
+
+  await expect(phone.getByRole('status')).toHaveText(
+    `Movie 1 of ${SLATE_SIZE.toString()}`,
+  );
+  const card = phone.locator('.card');
+  const box = await card.boundingBox();
+  if (box === null) throw new Error('The card is not laid out');
+  const startX = box.x + box.width / 2;
+  const startY = box.y + 40;
+
+  // A touch that travels vertically is the page being scrolled, not a vote.
+  // The card must let it go rather than treating it as a swipe.
+  const pointer = { pointerId: 1, pointerType: 'touch', isPrimary: true };
+  await card.dispatchEvent('pointerdown', {
+    ...pointer,
+    clientX: startX,
+    clientY: startY,
+  });
+  for (const travelled of [40, 120, 220]) {
+    await card.dispatchEvent('pointermove', {
+      ...pointer,
+      clientX: startX,
+      clientY: startY - travelled,
+    });
+  }
+  await card.dispatchEvent('pointerup', {
+    ...pointer,
+    clientX: startX,
+    clientY: startY - 220,
+  });
+  await expect(phone.getByRole('status')).toHaveText(
+    `Movie 1 of ${SLATE_SIZE.toString()}`,
+  );
+
+  // The choices stay on screen once the page has been scrolled down the card.
+  await phone.evaluate(() => {
+    globalThis.scrollTo(0, 300);
+  });
+  await expect
+    .poll(async () => phone.evaluate(() => globalThis.scrollY))
+    .toBeGreaterThan(0);
+  await expect(phone.getByRole('button', { name: 'Yes' })).toBeInViewport();
+
+  // And they still vote from where they are pinned.
+  await phone.getByRole('button', { name: 'Yes' }).click();
+  await expect(phone.getByRole('status')).toHaveText(
+    `Movie 2 of ${SLATE_SIZE.toString()}`,
+  );
+});
+
+test('a horizontal drag across the card still votes', async ({
+  browser,
+  page,
+}) => {
+  const { invitePath, hostPath } = await createRoom(page);
+  const solo = await joinAs(browser, invitePath, 'Dragger');
+
+  const host = await browser.newPage();
+  await host.goto(hostPath);
+  await host.getByRole('button', { name: /Start voting/u }).click();
+
+  await expect(solo.getByRole('status')).toHaveText(
+    `Movie 1 of ${SLATE_SIZE.toString()}`,
+  );
+  const box = await solo.locator('.card').boundingBox();
+  if (box === null) throw new Error('The card is not laid out');
+  const y = box.y + 40;
+
+  await solo.mouse.move(box.x + box.width / 2, y);
+  await solo.mouse.down();
+  // Past the 90px commit threshold, to the right: a yes.
+  await solo.mouse.move(box.x + box.width / 2 + 60, y);
+  await solo.mouse.move(box.x + box.width / 2 + 160, y);
+  await solo.mouse.up();
+
+  await expect(solo.getByRole('status')).toHaveText(
+    `Movie 2 of ${SLATE_SIZE.toString()}`,
+  );
+});
+
 test('an invalid invite reveals nothing', async ({ page }) => {
   await page.goto(`/join/${'z'.repeat(43)}`);
   await expect(

@@ -12,17 +12,31 @@
 
 body {
   min-width: 320px;
-  min-height: 100vh;
+  /* `dvh` rather than `vh`: a phone's collapsing toolbar must not add scroll. */
+  min-height: 100dvh;
   margin: 0;
   background:
     radial-gradient(circle at 85% 10%, rgb(109 73 255 / 25%), transparent 35%),
     #11131a;
+  background-attachment: fixed;
 }
 
 main {
   width: min(100% - 2rem, 42rem);
   margin: 0 auto;
   padding: clamp(2rem, 6vh, 4rem) 0 4rem;
+}
+
+/*
+ * Inside a room the screen belongs to the card and the controls, so the
+ * chrome above them shrinks to a wordmark and the page starts higher up.
+ */
+main.in-room {
+  padding-top: 1.25rem;
+}
+
+header.compact .eyebrow {
+  margin: 0;
 }
 
 .eyebrow {
@@ -74,7 +88,7 @@ section p {
 button {
   min-height: 3rem;
   padding: 0.75rem 1.25rem;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 0.75rem;
   background: #6d49ff;
   color: #fff;
@@ -88,8 +102,45 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/*
+ * One primary action per screen. Everything a host can also do — join as a
+ * player, copy the link, share — is an outline button, so the eye lands on
+ * the step that moves the room forward.
+ */
+button.secondary {
+  border-color: #3d4256;
+  background: rgb(255 255 255 / 4%);
+  color: #d3d5de;
+}
+
 button.danger {
   background: #7a2540;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.button-row button {
+  flex: 1 1 8rem;
+}
+
+/* The three-step explanation on the landing page. */
+.steps {
+  display: grid;
+  gap: 0.4rem;
+  margin: 1rem 0;
+  padding-left: 1.2rem;
+  color: #aaadb8;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 form {
@@ -134,12 +185,58 @@ input {
   overflow-wrap: anywhere;
 }
 
+/*
+ * An invite URL is a long opaque token. Smaller type and a looser line keep
+ * the wrapped underline off the row below it and the whole link readable.
+ */
+.link-row a {
+  color: #b9a9ff;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
 .link-label {
   color: #b9a9ff;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+/*
+ * Host status: one sentence in plain language, with a dot carrying the same
+ * meaning at a glance. The raw state name is an implementation detail and is
+ * deliberately never shown.
+ */
+.host-status .state-line {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  margin: 0;
+  color: #c8cad2;
+  line-height: 1.5;
+}
+
+.state-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: none;
+  border-radius: 50%;
+  background: #8b8f9c;
+  translate: 0 -0.1rem;
+}
+
+.state-dot.state-lobby {
+  background: #b9a9ff;
+}
+
+.state-dot.state-voting {
+  background: #1f7a4d;
+  box-shadow: 0 0 0 0.2rem rgb(31 122 77 / 25%);
+}
+
+.state-dot.state-complete {
+  background: #6d49ff;
 }
 
 .people {
@@ -152,23 +249,95 @@ input {
 
 .people li {
   display: flex;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
   align-items: center;
   padding: 0.5rem 0.75rem;
   border-radius: 0.75rem;
   background: rgb(255 255 255 / 4%);
 }
 
+.people .who {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  overflow-wrap: anywhere;
+}
+
 .tag {
-  margin-left: auto;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
   background: rgb(109 73 255 / 30%);
   font-size: 0.75rem;
 }
 
-.deck {
-  touch-action: pan-y;
+.tag.subtle {
+  background: rgb(255 255 255 / 8%);
+  color: #aaadb8;
+}
+
+/* Count beside a heading: informative, not part of the heading's voice. */
+.count {
+  margin-left: 0.4rem;
+  color: #8b8f9c;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/*
+ * Progress is public; choices are not. The bar says only how far someone has
+ * got, which is what a host waiting on the room actually needs.
+ */
+.progress-cell {
+  display: flex;
+  min-width: 7rem;
+  flex: 1 1 8rem;
+  gap: 0.6rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+.bar {
+  display: block;
+  overflow: hidden;
+  min-width: 3rem;
+  height: 0.4rem;
+  flex: 1 1 auto;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 10%);
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #6d49ff;
+  transition: width 240ms ease-out;
+}
+
+.fill.is-done {
+  background: #1f7a4d;
+}
+
+.tally {
+  flex: none;
+  color: #8b8f9c;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/*
+ * The deck is not a panel: the card itself is the surface, so the section
+ * around it contributes nothing but layout.
+ */
+section.deck {
+  margin-top: 1.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 .progress {
@@ -193,14 +362,21 @@ input {
 }
 
 .card {
-  margin: 1rem 0;
+  position: relative;
+  margin: 0.5rem 0 1rem;
   padding: 1.25rem;
   border: 1px solid #343846;
   border-radius: 1rem;
   background: linear-gradient(180deg, #1b1f2b, #171a24);
   box-shadow: 0 18px 40px rgb(0 0 0 / 35%);
   user-select: none;
-  touch-action: none;
+  /*
+   * `pan-y`, not `none`. The card fills a phone screen, so if it swallowed
+   * vertical gestures there would be nowhere left to scroll the page from.
+   * The browser keeps vertical panning; horizontal movement reaches the
+   * pointer handlers, which take the gesture only once it is clearly a swipe.
+   */
+  touch-action: pan-y;
 }
 
 button:focus-visible,
@@ -209,8 +385,39 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
-.choices button:hover:not(:disabled) {
-  filter: brightness(1.15);
+/*
+ * What a release would choose right now. It appears with the drag and never
+ * on its own, so it reads as feedback on the gesture rather than as a label.
+ */
+.stamp {
+  position: absolute;
+  top: 1.75rem;
+  padding: 0.3rem 0.9rem;
+  border: 3px solid currentcolor;
+  border-radius: 0.6rem;
+  font-size: 1.4rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: uppercase;
+  transition: opacity 120ms ease-out;
+}
+
+.stamp-no {
+  left: 1.75rem;
+  color: #ff8fa8;
+  rotate: -12deg;
+}
+
+.stamp-yes {
+  right: 1.75rem;
+  color: #4fd39a;
+  rotate: 12deg;
+}
+
+.stamp.is-armed {
+  opacity: 1;
 }
 
 /*
@@ -268,8 +475,13 @@ a:focus-visible {
   }
 }
 
+/*
+ * Capped against the viewport as well as in absolute terms: at 17rem flat the
+ * poster alone filled a small phone, pushing the title and the buttons off the
+ * bottom of a card that could not be scrolled past.
+ */
 .card .poster {
-  height: 17rem;
+  height: min(17rem, 38dvh);
   width: auto;
   margin-inline: auto;
 }
@@ -360,10 +572,44 @@ a:focus-visible {
   font-style: italic;
 }
 
+/*
+ * Pinned to the bottom of the viewport for the whole of a voting screen.
+ *
+ * The card is taller than a phone, so buttons that scrolled with it were
+ * unreachable exactly when someone had finished reading and wanted to vote.
+ * Sticky would only hold them while the deck itself was on screen, which
+ * loses them again as soon as the reader scrolls to the roster below; fixed
+ * keeps the two choices in reach wherever the page has got to. It tracks the
+ * same column width as `main`, so it never spans wider than the content.
+ *
+ * The backdrop keeps text legible as it passes underneath, and the safe-area
+ * inset keeps the row clear of a phone's home indicator.
+ */
 .choices {
+  position: fixed;
+  z-index: 5;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  width: min(100% - 2rem, 42rem);
+  padding: 0.75rem 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
   gap: 0.75rem;
+  grid-template-columns: 1fr 1fr;
+  background: linear-gradient(to top, #11131a 62%, rgb(17 19 26 / 0%));
+  bottom: 0;
+  left: 50%;
+  translate: -50% 0;
+}
+
+/*
+ * Room screens reserve the height the pinned choices occupy, so the last
+ * thing on the page is never parked permanently underneath them.
+ */
+main.in-room {
+  padding-bottom: 8rem;
+}
+
+.deck-hint {
+  margin-top: 0.5rem;
+  text-align: center;
 }
 
 .choices .no {
@@ -374,12 +620,36 @@ a:focus-visible {
   background: #1f7a4d;
 }
 
+/*
+ * The answer to the question the room was opened to settle, stated once in
+ * words. The table below it is the evidence, not the headline.
+ */
+.verdict {
+  margin: 0.75rem 0 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid #3d4256;
+  border-radius: 0.75rem;
+  background: rgb(109 73 255 / 12%);
+  color: #f7f4ee;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
 .results {
   display: grid;
   gap: 0.5rem;
   margin: 1rem 0 0;
   padding: 0;
   list-style: none;
+}
+
+/* First place carries a little more weight than the nineteen below it. */
+.results li:first-child {
+  background: rgb(255 255 255 / 7%);
+}
+
+.results li:first-child .name {
+  font-weight: 700;
 }
 
 .results li {

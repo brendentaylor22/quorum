@@ -53,14 +53,18 @@ function CatalogNotice() {
 export function App() {
   const segments = globalThis.location.pathname.split('/').filter(Boolean);
   const [route, token] = segments;
+  // Inside a room the headline has done its job, and on a phone it costs a
+  // third of the screen that the voting card needs. Only the landing page,
+  // where it is the pitch, keeps it.
+  const inRoom = route === 'join' || route === 'host';
 
   return (
-    <main>
-      <header>
+    <main className={inRoom ? 'in-room' : ''}>
+      <header className={inRoom ? 'compact' : ''}>
         <p className="eyebrow">
           <a href="/">QUORUM</a>
         </p>
-        <h1>Pick something to watch, together.</h1>
+        {inRoom ? null : <h1>Pick something to watch, together.</h1>}
       </header>
       {route === 'join' && token !== undefined ? (
         <JoinScreen inviteToken={token} />
