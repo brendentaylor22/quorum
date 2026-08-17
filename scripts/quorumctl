@@ -10,7 +10,7 @@ token_secret_file="$project_dir/deploy/secrets/token-secret"
 runtime_uid=10001
 
 usage() {
-  printf '%s\n' 'Usage: quorumctl start [--tunnel|--proxy] | stop | status | doctor | migrate | purge [--room <roomId>] | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
+  printf '%s\n' 'Usage: quorumctl start [--tunnel|--proxy|--existing-ingress] | stop | status | doctor | migrate | purge [--room <roomId>] | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
   exit 2
 }
 
@@ -95,12 +95,22 @@ case "$command" in
         require_proxy_settings
         compose --profile proxy up --detach
         ;;
-      '')
-        # No ingress: the app runs on an internal network with no published
-        # port, so nothing outside Docker can reach it. Useful for migrate,
-        # doctor, and catalog work; not a way to serve anyone.
+      # For a host that already terminates TLS for something else: a reverse
+      # proxy, or a tunnel with other hostnames on it. Quorum starts with no
+      # ingress of its own and no published port; the existing proxy joins the
+      # quorum-edge network and forwards to http://quorum:3000.
+      --existing-ingress)
         compose up --detach app
-        printf '%s\n' 'Started without ingress. Nothing can reach this instance; use --tunnel or --proxy to serve it.' >&2
+        printf '%s\n' 'Started for an ingress you already run.' >&2
+        printf '%s\n' 'Attach that proxy to the quorum-edge network and forward to http://quorum:3000.' >&2
+        printf '%s\n' 'Set QUORUM_TRUST_PROXY in deploy/.env, or every caller shares one rate-limit bucket.' >&2
+        ;;
+      '')
+        # No ingress at all: the app runs on an internal network with no
+        # published port, so nothing outside Docker can reach it. Useful for
+        # migrate, doctor, and catalog work; not a way to serve anyone.
+        compose up --detach app
+        printf '%s\n' 'Started without ingress. Nothing can reach this instance; use --tunnel, --proxy, or --existing-ingress to serve it.' >&2
         ;;
       *) usage ;;
     esac

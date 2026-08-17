@@ -95,12 +95,80 @@ scripts/quorumctl doctor
 `QUORUM_PUBLIC_HOSTNAME` must resolve to this host, and ports 80 and 443 must
 reach it, or the certificate cannot be issued.
 
-Already running nginx, Traefik, or HAProxy elsewhere? Point it at the app by
-attaching your proxy to the `quorum-edge` network rather than publishing a port
-from the app. Forward `X-Forwarded-For` and `X-Forwarded-Proto`, and set
-`QUORUM_TRUST_PROXY` to your proxy's address.
+Already running a proxy? Use Option B instead — this profile publishes 80 and
+443 and will collide with it.
 
-### Option B — Cloudflare Tunnel (no open inbound port)
+### Option B — an ingress you already run
+
+The common case, and the one to reach for if this host already serves something
+else on a domain. Quorum starts with no ingress of its own; your existing
+reverse proxy or tunnel joins Quorum's network and forwards to it.
+
+```sh
+scripts/quorumctl start --existing-ingress
+```
+
+**Attach the proxy to `quorum-edge` — never Quorum to the proxy's network.**
+That direction matters more than it looks. A container attached to both an
+internal network and an ordinary bridge takes its default route from the
+bridge, so putting Quorum on your proxy's network hands the serving container
+exactly the Internet access `internal: true` exists to deny. Joining the proxy
+to `quorum-edge` costs the proxy nothing — it keeps its own networks — and
+Quorum stays sealed.
+
+In the proxy's own Compose file:
+
+```yaml
+services:
+  your-proxy:
+    networks:
+      - your-existing-network # keep whatever it already had
+      - quorum-edge
+
+networks:
+  quorum-edge:
+    external: true
+```
+
+Then forward the hostname to **`http://quorum:3000`**. `quorum` is a stable
+network alias, so it does not change when your Compose project name does.
+
+**Resolve the upstream at request time, not at startup.** nginx — and therefore
+Nginx Proxy Manager — resolves upstream names once when it loads its config, and
+_refuses to start at all_ if the name is missing:
+
+```text
+[emerg] host not found in upstream "quorum"
+```
+
+If Quorum is stopped when the proxy restarts, that takes down every other site
+the proxy serves. In Nginx Proxy Manager, put this in the host's **Advanced**
+tab:
+
+```nginx
+resolver 127.0.0.11 valid=10s ipv6=off;
+set $quorum_upstream http://quorum:3000;
+location / {
+  proxy_pass $quorum_upstream;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto https;
+}
+```
+
+With that, stopping Quorum yields a 502 for Quorum's hostname alone, and
+everything else keeps serving. Verified: proxy restarted with Quorum down stays
+healthy, and recovers on its own when Quorum comes back.
+
+Set `QUORUM_TRUST_PROXY` to the Docker network range so rate limits key on the
+real client rather than on the proxy:
+
+```sh
+QUORUM_TRUST_PROXY=172.16.0.0/12
+```
+
+### Option C — Cloudflare Tunnel (no open inbound port)
 
 The host opens no inbound port at all; `cloudflared` makes an outbound
 connection and Cloudflare routes to it. This is the shape
@@ -141,6 +209,23 @@ either direction:
 So it defaults to off, and you set it deliberately. It accepts `true`, a hop
 count, or — best — a comma-separated list of addresses or CIDRs you actually
 trust.
+
+## Running alongside other services
+
+Quorum's documents describe a dedicated VM with no other workloads
+([ADR 0004](adr/0004-dedicated-vm.md)). Running it beside a media server or
+anything else on one Docker host is a weaker boundary, and worth being clear
+about rather than discovering later: containers on one host share a kernel and a
+daemon, so a container escape reaches the neighbours.
+
+It is a reasonable trade for a household, and the plan anticipates it. What it
+is not is the isolation the threat model claims under T09. If you take it:
+
+- Keep Quorum in its own Compose project and its own networks, as shipped.
+- Do not add the Docker socket, host networking, or bind mounts from other
+  services. Nothing in Quorum's topology needs them.
+- Remember the serving container has no Internet route only because of
+  `internal: true`. Attaching it to a shared network removes that.
 
 ## 4. Import a real catalog (optional)
 

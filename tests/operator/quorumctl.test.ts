@@ -197,6 +197,18 @@ describe('quorumctl', () => {
     expect(proxy.status).toBe(0);
     expect(proxy.dockerCalls.join('\n')).toContain('--profile proxy');
 
+    // The common self-hosted case: something already terminates TLS on this
+    // host, so Quorum brings no ingress of its own.
+    const existing = await invoke(['start', '--existing-ingress']);
+    expect(existing.status).toBe(0);
+    // The recording stub appends, so only the newest call belongs to this
+    // invocation — the earlier ones above are still in the log.
+    const existingCall = existing.dockerCalls.at(-1) ?? '';
+    expect(existingCall).toContain('up --detach app');
+    expect(existingCall).not.toContain('--profile');
+    expect(existing.stderr).toContain('quorum-edge');
+    expect(existing.stderr).toContain('QUORUM_TRUST_PROXY');
+
     // A typo must not silently start an instance nobody can reach.
     const wrong = await invoke(['start', '--tunnnel']);
     expect(wrong.status).toBe(2);

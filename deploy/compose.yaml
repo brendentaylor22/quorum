@@ -34,7 +34,13 @@ services:
       - quorum-data:/data
       - ./backups:/backups
     networks:
-      - quorum-edge
+      quorum-edge:
+        # A stable name for an ingress that lives in someone else's Compose
+        # project to point at. The generated container name carries the project
+        # prefix and changes with it; this does not, so a proxy configuration
+        # written once keeps working.
+        aliases:
+          - quorum
     healthcheck:
       test:
         [
@@ -194,6 +200,18 @@ volumes:
     name: quorum-caddy-config
 
 networks:
+  # `internal: true` is what denies the serving container a route to the
+  # Internet, and the fixed name is what lets an ingress you already run join
+  # it from another Compose project:
+  #
+  #   networks:
+  #     quorum-edge:
+  #       external: true
+  #
+  # Join the proxy to this network — never Quorum to the proxy's. A container
+  # attached to both an internal network and an ordinary bridge takes its
+  # default route from the bridge, which hands the serving container exactly
+  # the egress this network exists to deny.
   quorum-edge:
     name: quorum-edge
     internal: true
