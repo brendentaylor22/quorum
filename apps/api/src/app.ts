@@ -1,5 +1,6 @@
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
+import type { ErrorResponse } from '@quorum/contracts';
 import {
   integrityCheck,
   migrate,
@@ -127,6 +128,20 @@ export async function buildApp(
       }
     },
   );
+
+  /*
+   * Fastify's default 404 handler logs `Route GET:/join/<token> not found` as a
+   * message string. A serializer cannot redact that — it only sees `req.url` —
+   * so the capability survives into the log line that `logging.ts` exists to
+   * prevent. Any mistyped path carrying a token leaks it: `/api/invites/<token>/x`.
+   *
+   * Replacing the handler removes the log entirely, and returns the same
+   * uniform body every other unauthorized, unknown, or expired capability gets.
+   */
+  app.setNotFoundHandler((_request, reply) => {
+    const body: ErrorResponse = { error: 'not_found', message: 'Not found' };
+    return reply.code(404).send(body);
+  });
 
   app.get('/health/live', () => ({ status: 'ok' }));
   app.get('/health/ready', async (_request, reply) => {

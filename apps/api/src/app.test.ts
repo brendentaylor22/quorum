@@ -51,6 +51,12 @@ describe('request logging', () => {
     const lines: string[] = [];
     const app = await buildApp({
       databasePath: join(directory, 'quorum.db'),
+      // No static assets, so a client capability path falls through to the
+      // 404 handler rather than the SPA fallback. That is the path that used
+      // to leak: Fastify's default handler logs the raw URL in a message
+      // string, which no serializer can reach. A machine that happened to
+      // have `apps/web/dist` built never exercised it.
+      staticDirectory: join(directory, 'missing'),
       logger: true,
       logDestination: new Writable({
         write(chunk: Buffer, _encoding, callback) {
@@ -85,6 +91,13 @@ describe('request logging', () => {
       headers: { [REQUEST_HEADER]: '1', [HOST_TOKEN_HEADER]: hostToken },
     });
     await app.inject({ method: 'GET', url: `/join/${inviteToken}` });
+    // A mistyped path carrying a real capability: no route matches, so only
+    // the 404 handler decides whether the token reaches the log.
+    await app.inject({
+      method: 'GET',
+      url: `/api/invites/${inviteToken}/nonsense`,
+    });
+    await app.inject({ method: 'GET', url: `/host/${hostToken}/typo` });
 
     const log = lines.join('');
     expect(log).not.toBe('');
