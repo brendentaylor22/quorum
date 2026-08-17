@@ -2,11 +2,7 @@ name: quorum
 
 services:
   app:
-    image: ${QUORUM_IMAGE:-quorum:local}
-    build:
-      context: ..
-      args:
-        VCS_REF: ${QUORUM_VCS_REF:-local}
+    image: ${QUORUM_IMAGE:?Set QUORUM_IMAGE to an immutable GHCR image digest}
     restart: unless-stopped
     init: true
     user: '10001:10001'
@@ -20,6 +16,20 @@ services:
     cpus: 1.0
     tmpfs:
       - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    environment:
+      # Keyed hashes of invite, host, and session capabilities derive from this.
+      QUORUM_TOKEN_SECRET_FILE: /run/secrets/quorum_token_secret
+      # Whose `X-Forwarded-For` to believe. Empty means nobody's, which is
+      # correct with no proxy in front. Both the tunnel and the proxy profile
+      # need this set, or every caller shares one rate-limit bucket. See
+      # docs/self-hosting.md.
+      QUORUM_TRUST_PROXY: ${QUORUM_TRUST_PROXY:-}
+      # Multiplies every rate limit. 1 is the documented policy; raise it for a
+      # deployment behind an unusually large shared address.
+      QUORUM_RATE_LIMIT_SCALE: ${QUORUM_RATE_LIMIT_SCALE:-1}
+      QUORUM_RETENTION_SWEEP_MINUTES: ${QUORUM_RETENTION_SWEEP_MINUTES:-15}
+    secrets:
+      - quorum_token_secret
     volumes:
       - quorum-data:/data
       - ./backups:/backups
@@ -37,6 +47,53 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # Operator-triggered catalog import. This is the only part of the system that
+  # reaches the Internet, so it runs as its own short-lived container on its own
+  # egress network and never joins `quorum-edge`. The serving application keeps
+  # zero outbound route.
+  #
+  #   docker compose --profile refresh run --rm catalog-refresh
+  catalog-refresh:
+    image: ${QUORUM_IMAGE:?Set QUORUM_IMAGE to an immutable GHCR image digest}
+    profiles:
+      - refresh
+    restart: 'no'
+    init: true
+    user: '10001:10001'
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 512m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    command: ['node', 'apps/api/dist/cli.js', 'catalog-refresh']
+    environment:
+      # TMDB v4 read access token, read from the file so it never reaches the
+      # process table, `docker inspect`, or a log line.
+      TMDB_READ_ACCESS_TOKEN_FILE: /run/secrets/tmdb_read_access_token
+      # 600 votes keeps the catalog to films with a meaningful rating, and
+      # keeps the sweep under the item ceiling. Discovery runs newest-first, so
+      # exceeding the ceiling would drop the oldest cinema, not the least
+      # popular films; the report flags it as `cappedAtMaxItems` if it happens.
+      QUORUM_CATALOG_MIN_VOTES: ${QUORUM_CATALOG_MIN_VOTES:-600}
+      QUORUM_CATALOG_FIRST_YEAR: ${QUORUM_CATALOG_FIRST_YEAR:-1930}
+      QUORUM_CATALOG_MAX_ITEMS: ${QUORUM_CATALOG_MAX_ITEMS:-30000}
+      # Confidence threshold for the weighted rating, deliberately separate from
+      # the vote floor: too low and a hyped new release outranks a classic.
+      QUORUM_CATALOG_RATING_PRIOR: ${QUORUM_CATALOG_RATING_PRIOR:-3000}
+      QUORUM_CATALOG_CONCURRENCY: ${QUORUM_CATALOG_CONCURRENCY:-12}
+      QUORUM_CATALOG_REGIONS: ${QUORUM_CATALOG_REGIONS:-GB,US}
+    secrets:
+      - tmdb_read_access_token
+    volumes:
+      - quorum-data:/data
+    networks:
+      - catalog-egress
 
   cloudflared:
     image: cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
@@ -68,9 +125,73 @@ services:
       app:
         condition: service_healthy
 
+  # The alternative to a Cloudflare tunnel, for an operator who would rather
+  # own their own ingress. Same isolation shape as `cloudflared`: it joins
+  # `quorum-edge` to reach the application and `proxy-egress` to reach the
+  # certificate authority, and the application still publishes no port and
+  # still has no route out.
+  #
+  #   scripts/quorumctl start --proxy
+  #
+  # Ports 80 and 443 must reach this host, and QUORUM_PUBLIC_HOSTNAME must
+  # resolve to it, or the certificate cannot be issued.
+  proxy:
+    # caddy:2-alpine, pinned by digest like every other image here.
+    image: caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    profiles:
+      - proxy
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    # Binding 80 and 443 is the one capability this container genuinely needs.
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    environment:
+      # Both are required to serve, and `quorumctl start --proxy` refuses
+      # without them. They are not `:?` here because that would make the whole
+      # topology unvalidatable — `docker compose config` interpolates every
+      # service, profile or no profile.
+      QUORUM_PUBLIC_HOSTNAME: ${QUORUM_PUBLIC_HOSTNAME:-}
+      QUORUM_ACME_EMAIL: ${QUORUM_ACME_EMAIL:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Losing this volume means
+      # re-issuing certificates, which rate limits at the CA make unpleasant.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - quorum-edge
+      - proxy-egress
+    depends_on:
+      app:
+        condition: service_healthy
+
+secrets:
+  quorum_token_secret:
+    file: ./secrets/token-secret
+  tmdb_read_access_token:
+    file: ./secrets/tmdb-read-access-token.secret
+
 volumes:
   quorum-data:
     name: ${QUORUM_DATA_VOLUME:-quorum-data}
+  caddy-data:
+    name: quorum-caddy-data
+  caddy-config:
+    name: quorum-caddy-config
 
 networks:
   quorum-edge:
@@ -78,3 +199,11 @@ networks:
     internal: true
   tunnel-egress:
     name: quorum-tunnel-egress
+  # Only the reverse proxy joins this, and only to reach the certificate
+  # authority. Same reasoning as `tunnel-egress`.
+  proxy-egress:
+    name: quorum-proxy-egress
+  # Only the catalog importer joins this. Keeping it separate from
+  # `quorum-edge` is what preserves "the application cannot reach the Internet".
+  catalog-egress:
+    name: quorum-catalog-egress

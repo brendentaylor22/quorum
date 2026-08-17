@@ -15,5 +15,8 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "vite": "8.2.1"
+  },
+  "dependencies": {
+    "@quorum/contracts": "0.1.0"
   }
 }

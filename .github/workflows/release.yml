@@ -2,12 +2,10 @@ name: Release image
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -17,22 +15,45 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Generate release identity
+        id: release
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          printf 'id=main-%s\n' "$short_sha" >> "$GITHUB_OUTPUT"
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      # @quorum/database exports generated declarations; build them before ESLint
-      # resolves @quorum/database from the API workspace.
-      - run: npm run build --workspace @quorum/database
+      # Workspace packages export generated declarations; build them before
+      # ESLint and tsc resolve @quorum/* from the app workspaces. This list
+      # lives in package.json as `build:packages` — enumerating it here as well
+      # is how two packages went missing and every type-aware lint rule started
+      # reporting `any`.
+      - run: npm run build:packages
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      # Playwright drives the built server and client, so both must exist.
+      - run: npm run build
+      # A release can be cut by pushing straight to main, which never runs the
+      # pull-request checks. The browser suite is the only evidence that the
+      # room flow works end to end, so it gates the publish rather than only
+      # the review.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser flows
+        run: npx playwright test --config tests/playwright.config.ts
       - run: npm run audit:prod
       - run: npm run licenses
       - name: Set up Buildx
@@ -47,6 +68,11 @@ jobs:
           build-args: VCS_REF=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Publishing an image that cannot boot is worse than not publishing: it
+      # ships with a digest, an SBOM, and a clean scan attesting to it. This
+      # runs before the push for exactly that reason.
+      - name: Smoke test the image before publishing
+        run: scripts/smoke-image.sh quorum:release-scan
       - name: Block critical and high findings
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -67,8 +93,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
+            type=raw,value=${{ steps.release.outputs.id }}
             type=sha,prefix=sha-
+            type=raw,value=main
       - name: Publish image
         id: publish
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -80,6 +107,17 @@ jobs:
           build-args: VCS_REF=${{ github.sha }}
           provenance: mode=max
           cache-from: type=gha
+      # The pre-push scan gates a locally loaded build, not the artifact that
+      # operators actually pull. Re-scan the published digest so the release can
+      # only complete if the exact deployed image is clean.
+      - name: Block critical and high findings in published digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}@${{ steps.publish.outputs.digest }}
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
       - name: Generate SPDX SBOM from published digest
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
@@ -87,13 +125,96 @@ jobs:
           format: spdx-json
           output-file: quorum-sbom.spdx.json
           upload-artifact: false
-      - name: Upload SBOM
+      - name: Package pull-only deployment bundle
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+        run: |
+          set -euo pipefail
+          bundle_root="release/quorum-deploy"
+          mkdir -p \
+            "$bundle_root/deploy/backups" \
+            "$bundle_root/deploy/cloudflared" \
+            "$bundle_root/deploy/caddy" \
+            "$bundle_root/deploy/secrets" \
+            "$bundle_root/docs" \
+            "$bundle_root/scripts"
+          cp deploy/compose.yaml "$bundle_root/deploy/compose.yaml"
+          cp deploy/cloudflared/config.example.yml "$bundle_root/deploy/cloudflared/config.example.yml"
+          cp deploy/caddy/Caddyfile "$bundle_root/deploy/caddy/Caddyfile"
+          cp deploy/.env.example "$bundle_root/deploy/.env.example"
+          cp deploy/secrets/.gitignore "$bundle_root/deploy/secrets/.gitignore"
+          cp deploy/secrets/README.md "$bundle_root/deploy/secrets/README.md"
+          cp scripts/quorumctl "$bundle_root/scripts/quorumctl"
+          chmod 0755 "$bundle_root/scripts/quorumctl"
+          cp docs/phase-1/operator-runbook.md "$bundle_root/docs/operator-runbook.md"
+          cp docs/phase-1/release-runbook.md "$bundle_root/docs/release-runbook.md"
+          cp docs/phase-1/rollback-runbook.md "$bundle_root/docs/rollback-runbook.md"
+          # A self-installer gets the guide written for them, plus the licence
+          # the AGPL requires travel with every distributed copy.
+          cp docs/self-hosting.md "$bundle_root/docs/self-hosting.md"
+          cp LICENSE "$bundle_root/LICENSE"
+          cp SECURITY.md "$bundle_root/SECURITY.md"
+          printf '# Generated by Quorum release %s\nQUORUM_IMAGE=ghcr.io/%s@%s\nQUORUM_DATA_VOLUME=quorum-data\n' \
+            "$RELEASE_ID" \
+            "$GITHUB_REPOSITORY" \
+            "${{ steps.publish.outputs.digest }}" \
+            > "$bundle_root/deploy/.env"
+          # Carry the commented ingress and tuning options across, so an
+          # operator sees them where they will be editing rather than only in
+          # the example beside it.
+          tail -n +4 deploy/.env.example >> "$bundle_root/deploy/.env"
+          printf 'release=%s\ncommit=%s\nimage=ghcr.io/%s@%s\n' \
+            "$RELEASE_ID" \
+            "$GITHUB_SHA" \
+            "$GITHUB_REPOSITORY" \
+            "${{ steps.publish.outputs.digest }}" \
+            > "$bundle_root/RELEASE"
+          tar --directory release --create --gzip \
+            --file release/quorum-deploy.tar.gz \
+            quorum-deploy
+          cp quorum-sbom.spdx.json release/quorum-sbom.spdx.json
+          (
+            cd release
+            sha256sum \
+              quorum-deploy.tar.gz \
+              quorum-sbom.spdx.json \
+              > SHA256SUMS
+          )
+      - name: Upload release evidence artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: quorum-sbom-${{ github.sha }}
-          path: quorum-sbom.spdx.json
+          name: quorum-release-${{ steps.release.outputs.id }}
+          path: |
+            release/quorum-deploy.tar.gz
+            release/quorum-sbom.spdx.json
+            release/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
-      - name: Record deployment identity
+      - name: Create GitHub Release with deployment bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.release.outputs.id }}
         run: |
-          printf '### Quorum image\n\n`ghcr.io/%s@%s`\n' "${{ github.repository }}" "${{ steps.publish.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          assets=(
+            "release/quorum-deploy.tar.gz"
+            "release/quorum-sbom.spdx.json"
+            "release/SHA256SUMS"
+          )
+          if gh release view "$RELEASE_ID" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_ID" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_ID" "${assets[@]}" \
+              --target "$GITHUB_SHA" \
+              --generate-notes \
+              --title "Quorum ${RELEASE_ID}"
+          fi
+      - name: Record deployment identity
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+        run: |
+          printf '### Quorum image\n\n`ghcr.io/%s@%s`\n\nRelease: `%s`\n\nDeployment bundle: `quorum-deploy.tar.gz`.\n' \
+            "${{ github.repository }}" \
+            "${{ steps.publish.outputs.digest }}" \
+            "$RELEASE_ID" \
+            >> "$GITHUB_STEP_SUMMARY"

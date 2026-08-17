@@ -1,0 +1,36 @@
+# Reverse proxy for operators who do not want a Cloudflare account.
+#
+# Caddy terminates TLS and forwards to the application over the internal
+# `quorum-edge` network. The application still publishes no port of its own and
+# still has no route to the Internet — only this container does, on its own
+# network, exactly like `cloudflared` in the tunnel profile.
+#
+# Set QUORUM_PUBLIC_HOSTNAME in deploy/.env. Caddy obtains and renews a
+# certificate for it automatically, which requires the name to resolve to this
+# host and ports 80 and 443 to reach it.
+
+{
+	# A real address, so certificate problems arrive by email rather than by
+	# a browser warning six weeks from now.
+	email {$QUORUM_ACME_EMAIL}
+}
+
+{$QUORUM_PUBLIC_HOSTNAME} {
+	encode zstd gzip
+
+	# Quorum reads the client address from X-Forwarded-For to key its rate
+	# limits, and only when QUORUM_TRUST_PROXY names this proxy. Both halves
+	# have to agree or the limits are either shared by everyone or forgeable
+	# by anyone.
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		# Capability tokens are in the URL path. Quorum redacts them from its
+		# own logs; a proxy access log would put them back, so this one records
+		# nothing per request.
+		output discard
+	}
+}

@@ -19,18 +19,28 @@ describe('database operations', () => {
     const database = openDatabase(source);
     expect(migrate(database, migrationsDirectory)).toEqual([
       '0001_foundation.sql',
+      '0002_room_model.sql',
+      '0003_catalog_ranking.sql',
+      '0004_rounds.sql',
+      '0005_catalog_images.sql',
+      '0006_slate_scores.sql',
     ]);
     expect(migrate(database, migrationsDirectory)).toEqual([]);
     database
       .prepare(
-        'INSERT INTO foundation_records (name, created_at) VALUES (?, ?)',
+        `INSERT INTO rooms (public_id, state, invite_token_hash, host_token_hash, created_at, expires_at)
+         VALUES (?, 'LOBBY', ?, ?, ?, ?)`,
       )
-      .run('test', '2026-08-11T00:00:00.000Z');
+      .run(
+        'room-public-id',
+        'invite-hash',
+        'host-hash',
+        '2026-08-11T00:00:00.000Z',
+        '2026-08-12T00:00:00.000Z',
+      );
     database.close();
 
-    expect(
-      (await backupDatabase(source, backup)).counts.foundation_records,
-    ).toBe(1);
+    expect((await backupDatabase(source, backup)).counts.rooms).toBe(1);
     chmodSync(backup, 0o444);
     expect((await restoreDatabase(backup, restored)).counts).toEqual(
       inspectDatabase(source).counts,

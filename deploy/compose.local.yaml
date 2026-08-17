@@ -1,0 +1,7 @@
+services:
+  app:
+    image: quorum:local
+    build:
+      context: ..
+      args:
+        VCS_REF: ${QUORUM_VCS_REF:-local}
