@@ -13,6 +13,14 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
+import { RateLimiter } from '../rate-limit.js';
+
+/**
+ * These tests assert room rules, not abuse rules, and they create far more
+ * rooms from one address than any human would. Rate limiting has its own
+ * suite in `rate-limit.test.ts` and `routes.rate-limit.test.ts`.
+ */
+const unlimited = (): RateLimiter => new RateLimiter({ scale: 0 });
 
 const apps: FastifyInstance[] = [];
 
@@ -25,6 +33,7 @@ async function createApp(now?: () => Date): Promise<FastifyInstance> {
   const app = await buildApp({
     databasePath: join(directory, 'quorum.db'),
     staticDirectory: join(directory, 'missing'),
+    rateLimiter: unlimited(),
     ...(now === undefined ? {} : { now }),
   });
   apps.push(app);
@@ -624,7 +633,11 @@ describe('durability', () => {
     const directory = mkdtempSync(join(tmpdir(), 'quorum-restart-'));
     const databasePath = join(directory, 'quorum.db');
     const staticDirectory = join(directory, 'missing');
-    const first = await buildApp({ databasePath, staticDirectory });
+    const first = await buildApp({
+      databasePath,
+      staticDirectory,
+      rateLimiter: unlimited(),
+    });
     apps.push(first);
 
     const room = await createRoom(first);
@@ -635,7 +648,11 @@ describe('durability', () => {
     await first.close();
     apps.splice(apps.indexOf(first), 1);
 
-    const second = await buildApp({ databasePath, staticDirectory });
+    const second = await buildApp({
+      databasePath,
+      staticDirectory,
+      rateLimiter: unlimited(),
+    });
     apps.push(second);
     const resumed = await view(second, solo);
     expect(resumed.state).toBe('VOTING');

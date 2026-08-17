@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError } from './api.js';
+
+/**
+ * Ticks to sit out after being rate limited. At a two-second poll this is a
+ * ten-second pause, comfortably inside the shortest limit window.
+ */
+const BACKOFF_TICKS = 5;
 
 /** Short polling keeps Phase 2 free of WebSocket operational complexity. */
 export function usePoll<T>(
@@ -16,11 +23,24 @@ export function usePoll<T>(
   const loadRef = useRef(load);
   loadRef.current = load;
 
+  const backoffRef = useRef(0);
+
   const refresh = useCallback(async () => {
+    if (backoffRef.current > 0) {
+      backoffRef.current -= 1;
+      return;
+    }
     try {
       setData(await loadRef.current());
       setError(null);
     } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'rate_limited') {
+        // Backing off is the useful response, not an error banner: the last
+        // good view is still on screen and still true, and hammering a limit
+        // is what got us here.
+        backoffRef.current = BACKOFF_TICKS;
+        return;
+      }
       setError(caught instanceof Error ? caught.message : 'Request failed');
     }
   }, []);

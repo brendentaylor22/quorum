@@ -33,6 +33,11 @@ export default defineConfig({
       QUORUM_DATABASE_PATH: databasePath,
       // Plain-HTTP localhost only; production always sets Secure cookies.
       QUORUM_ALLOW_INSECURE_COOKIES: '1',
+      // Seven browser tests create seven rooms from one address in a minute,
+      // which is exactly the shape the room-creation limit exists to stop. The
+      // limiter stays switched on so its code path runs; the limits are scaled
+      // out of the way. Limit behaviour itself is proved in the API suite.
+      QUORUM_RATE_LIMIT_SCALE: '100',
     },
   },
 });

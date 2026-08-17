@@ -11,7 +11,10 @@ import {
   type ErrorResponse,
 } from '@quorum/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { createHash } from 'node:crypto';
 import { secureCookies } from './capabilities.js';
+import { instanceInfo } from './instance.js';
+import { POLICIES, RateLimiter, type RateLimitPolicy } from './rate-limit.js';
 import { ApiError, notFound, RoomService } from './rooms/service.js';
 
 const SESSION_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
@@ -47,6 +50,14 @@ function requireSameOrigin(request: FastifyRequest): void {
   if (originHost !== request.headers.host) {
     throw new ApiError(400, 'invalid_request', 'Cross-origin request rejected');
   }
+}
+
+/**
+ * An opaque, stable bucket id for a secret. Truncated because this only has to
+ * separate honest callers from each other, never to authenticate anyone.
+ */
+function bucketId(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex').slice(0, 16);
 }
 
 function parsePathToken(value: unknown): string {
@@ -86,10 +97,63 @@ function setSessionCookie(
   });
 }
 
+export interface RoomRouteOptions {
+  /** Injectable so tests can drive windows without waiting for wall clock. */
+  rateLimiter?: RateLimiter;
+}
+
 export function registerRoomRoutes(
   app: FastifyInstance,
   service: RoomService,
+  options: RoomRouteOptions = {},
 ): void {
+  const limiter = options.rateLimiter ?? new RateLimiter();
+
+  /**
+   * Spend one slot of a policy for this caller, or refuse.
+   *
+   * The key is the client source plus whatever scope the operation has. Source
+   * alone would let one abusive network exhaust a shared quota for a whole
+   * room; scope alone would let one attacker exhaust a room's quota for its
+   * honest participants. `request.ip` honours `trustProxy`, which an operator
+   * must configure when Quorum sits behind a proxy — otherwise every caller
+   * shares the proxy's address, and therefore one bucket. That is documented
+   * as an operator obligation rather than guessed at here, because believing
+   * an untrusted `X-Forwarded-For` would make the limit trivially evadable.
+   */
+  function spend(
+    request: FastifyRequest,
+    policy: RateLimitPolicy,
+    scope?: string,
+  ): void {
+    const key = scope === undefined ? request.ip : `${request.ip}|${scope}`;
+    const decision = limiter.check(key, policy);
+    if (decision.allowed) return;
+    throw new ApiError(
+      429,
+      'rate_limited',
+      'Too many requests',
+      decision.retryAfterSeconds,
+    );
+  }
+
+  /**
+   * Reads inside a room are charged to the session, not the address. Four
+   * phones on one wifi polling the same room are four honest callers, and
+   * keying on the address alone would have them starve each other. A session is
+   * not free to mint — joining is itself limited — so it is the right unit.
+   *
+   * The session token is a secret, so it is hashed into an opaque bucket id
+   * that never reaches a log, a header, or an error.
+   */
+  function roomReadScope(request: FastifyRequest, roomId: string): string {
+    const session = sessionToken(request, roomId);
+    if (session !== undefined) return `s:${bucketId(session)}`;
+    const host = hostToken(request);
+    if (host !== undefined) return `h:${bucketId(host)}`;
+    return `r:${roomId}`;
+  }
+
   app.addHook('onRequest', (request, _reply, done) => {
     if (request.url.startsWith('/api/')) service.expireDueRooms();
     done();
@@ -98,6 +162,9 @@ export function registerRoomRoutes(
   app.setErrorHandler((error: unknown, request, reply) => {
     if (error instanceof ApiError) {
       const body: ErrorResponse = { error: error.code, message: error.message };
+      if (error.retryAfterSeconds !== undefined) {
+        reply.header('retry-after', error.retryAfterSeconds.toString());
+      }
       return reply.code(error.status).send(body);
     }
     const statusCode =
@@ -126,8 +193,16 @@ export function registerRoomRoutes(
    */
   app.get('/api/catalog', () => service.catalogSource());
 
+  /**
+   * What this instance is: its licence and where its source lives. Public and
+   * unauthenticated, because the AGPL's offer of source is owed to anyone
+   * interacting with it, including someone who never joins a room.
+   */
+  app.get('/api/instance', () => instanceInfo());
+
   app.post('/api/rooms', (request, reply) => {
     requireSameOrigin(request);
+    spend(request, POLICIES.createRoom);
     const created = service.createRoom();
     const body: CreateRoomResponse = createRoomResponseSchema.parse({
       roomId: created.roomId,
@@ -142,6 +217,7 @@ export function registerRoomRoutes(
   });
 
   app.get('/api/invites/:inviteToken', (request) => {
+    spend(request, POLICIES.capabilityRead);
     const { inviteToken } = request.params as { inviteToken: string };
     const room = service.roomByInvite(parsePathToken(inviteToken));
     const caller = { participant: undefined, isHost: false };
@@ -161,6 +237,7 @@ export function registerRoomRoutes(
 
   app.post('/api/invites/:inviteToken/join', (request, reply) => {
     requireSameOrigin(request);
+    spend(request, POLICIES.join);
     const { inviteToken } = request.params as { inviteToken: string };
     const token = parsePathToken(inviteToken);
     const parsed = joinRequestSchema.safeParse(request.body);
@@ -185,6 +262,7 @@ export function registerRoomRoutes(
   });
 
   app.get('/api/host/:hostToken', (request) => {
+    spend(request, POLICIES.capabilityRead);
     const { hostToken: token } = request.params as { hostToken: string };
     const capability = parsePathToken(token);
     const room = service.roomByHostCapability(capability);
@@ -199,6 +277,7 @@ export function registerRoomRoutes(
 
   app.post('/api/host/:hostToken/join', (request, reply) => {
     requireSameOrigin(request);
+    spend(request, POLICIES.join);
     const { hostToken: token } = request.params as { hostToken: string };
     const capability = parsePathToken(token);
     const parsed = joinRequestSchema.safeParse(request.body);
@@ -220,6 +299,7 @@ export function registerRoomRoutes(
 
   app.get('/api/rooms/:roomId', (request) => {
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(request, POLICIES.read, roomReadScope(request, roomId));
     const { room, caller } = service.resolveCaller(
       roomId,
       sessionToken(request, roomId),
@@ -231,6 +311,11 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/start', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(
+      request,
+      POLICIES.hostMutation,
+      `h:${bucketId(hostToken(request) ?? '')}`,
+    );
     const room = service.start(roomId, hostToken(request));
     const { caller } = service.resolveCaller(
       roomId,
@@ -243,6 +328,11 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/close', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(
+      request,
+      POLICIES.hostMutation,
+      `h:${bucketId(hostToken(request) ?? '')}`,
+    );
     const room = service.close(roomId, hostToken(request));
     const { caller } = service.resolveCaller(
       roomId,
@@ -255,6 +345,11 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/expire', (request, reply) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(
+      request,
+      POLICIES.hostMutation,
+      `h:${bucketId(hostToken(request) ?? '')}`,
+    );
     service.expire(roomId, hostToken(request));
     return reply.code(204).send();
   });
@@ -262,6 +357,7 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/swipe', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(request, POLICIES.swipe, roomReadScope(request, roomId));
     const parsed = swipeRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       throw new ApiError(400, 'invalid_request', 'Invalid swipe');
@@ -295,6 +391,11 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/continue', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(
+      request,
+      POLICIES.hostMutation,
+      `h:${bucketId(hostToken(request) ?? '')}`,
+    );
     const room = service.continueVoting(roomId, hostToken(request));
     const { caller } = service.resolveCaller(
       roomId,
@@ -306,6 +407,7 @@ export function registerRoomRoutes(
 
   app.get('/api/rooms/:roomId/results', (request) => {
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
+    spend(request, POLICIES.read, roomReadScope(request, roomId));
     const { room } = service.resolveCaller(
       roomId,
       sessionToken(request, roomId),

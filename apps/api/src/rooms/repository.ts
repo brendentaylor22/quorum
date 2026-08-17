@@ -878,6 +878,67 @@ export function listExpiredRoomIds(
   ).map((row) => row.id);
 }
 
+/**
+ * Delete expired rooms whose tombstone window has passed, and everything that
+ * hangs off them.
+ *
+ * Marking a room `EXPIRED` revokes its capabilities but leaves the rows in
+ * place; the retention policy keeps that tombstone for 24 hours so a
+ * capability presented just after expiry still answers uniformly rather than
+ * distinguishably. After that the room is deleted outright. Every child table
+ * cascades from `rooms`, and `foreign_keys` is on for every connection, so this
+ * single delete takes participants, rounds, room items, exposures,
+ * interactions, and the room's audit events with it.
+ *
+ * Deliberately keyed on `expires_at`, not on a separate purge column: a room's
+ * expiry time is already the only clock the policy refers to.
+ */
+export function purgeExpiredRooms(
+  database: QuorumDatabase,
+  purgeBefore: string,
+): number {
+  const result = database
+    .prepare(`DELETE FROM rooms WHERE state = 'EXPIRED' AND expires_at <= ?`)
+    .run(purgeBefore);
+  return result.changes;
+}
+
+/** Delete one room and its data outright, whatever state it is in. */
+export function purgeRoomByPublicId(
+  database: QuorumDatabase,
+  publicId: string,
+): number {
+  const result = database
+    .prepare('DELETE FROM rooms WHERE public_id = ?')
+    .run(publicId);
+  return result.changes;
+}
+
+/** Counts an operator can check a purge against, with no room data in them. */
+export interface RetentionCounts {
+  rooms: number;
+  expiredRooms: number;
+  participants: number;
+  exposures: number;
+  interactions: number;
+  auditEvents: number;
+}
+
+export function retentionCounts(database: QuorumDatabase): RetentionCounts {
+  const count = (sql: string): number =>
+    (database.prepare(sql).get() as { value: number }).value;
+  return {
+    rooms: count('SELECT COUNT(*) AS value FROM rooms'),
+    expiredRooms: count(
+      `SELECT COUNT(*) AS value FROM rooms WHERE state = 'EXPIRED'`,
+    ),
+    participants: count('SELECT COUNT(*) AS value FROM participants'),
+    exposures: count('SELECT COUNT(*) AS value FROM exposures'),
+    interactions: count('SELECT COUNT(*) AS value FROM interactions'),
+    auditEvents: count('SELECT COUNT(*) AS value FROM audit_events'),
+  };
+}
+
 export interface RoomInteractionRow {
   participantId: number;
   catalogItemId: number;

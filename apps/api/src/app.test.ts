@@ -1,6 +1,12 @@
+import {
+  HOST_TOKEN_HEADER,
+  REQUEST_HEADER,
+  type CreateRoomResponse,
+} from '@quorum/contracts';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from './app.js';
 
@@ -36,5 +42,55 @@ describe('health endpoints', () => {
     expect((await app.inject({ method: 'GET', url: '/' })).statusCode).toBe(
       404,
     );
+  });
+});
+
+describe('request logging', () => {
+  it('never writes a capability token to the log', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-api-'));
+    const lines: string[] = [];
+    const app = await buildApp({
+      databasePath: join(directory, 'quorum.db'),
+      logger: true,
+      logDestination: new Writable({
+        write(chunk: Buffer, _encoding, callback) {
+          lines.push(chunk.toString('utf8'));
+          callback();
+        },
+      }),
+    });
+    apps.push(app);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      headers: { [REQUEST_HEADER]: '1' },
+    });
+    const { inviteToken, hostToken, roomId } =
+      created.json<CreateRoomResponse>();
+
+    // Every shape that puts a secret on the wire: token in the path, token in
+    // the header, session token in a cookie.
+    await app.inject({ method: 'GET', url: `/api/invites/${inviteToken}` });
+    await app.inject({ method: 'GET', url: `/api/host/${hostToken}` });
+    await app.inject({
+      method: 'POST',
+      url: `/api/invites/${inviteToken}/join`,
+      headers: { [REQUEST_HEADER]: '1' },
+      payload: { displayName: 'Ada' },
+    });
+    await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${roomId}`,
+      headers: { [REQUEST_HEADER]: '1', [HOST_TOKEN_HEADER]: hostToken },
+    });
+    await app.inject({ method: 'GET', url: `/join/${inviteToken}` });
+
+    const log = lines.join('');
+    expect(log).not.toBe('');
+    expect(log).not.toContain(inviteToken);
+    expect(log).not.toContain(hostToken);
+    // The route shape still survives, or the log would be useless.
+    expect(log).toContain('/api/host/[redacted]');
   });
 });

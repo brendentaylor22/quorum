@@ -40,6 +40,13 @@ const HOUR_MS = 60 * 60 * 1000;
 const LOBBY_LIFETIME_MS = 24 * HOUR_MS;
 const VOTING_LIFETIME_MS = 24 * HOUR_MS;
 const COMPLETED_LIFETIME_MS = 7 * 24 * HOUR_MS;
+/**
+ * How long an expired room's rows survive after its capabilities are revoked.
+ * The tombstone exists so a link presented just after expiry answers exactly
+ * like a link that never existed; deleting immediately would make "expired" and
+ * "never existed" distinguishable by timing alone.
+ */
+const TOMBSTONE_LIFETIME_MS = 24 * HOUR_MS;
 
 /**
  * Every capability failure — unknown, modified, expired, or belonging to
@@ -50,6 +57,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ErrorCode,
     message: string,
+    /** Seconds to advertise in `Retry-After`, for a 429. */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -128,6 +137,15 @@ export class RoomService {
    * version. Every card and every result row needs them, and they only change
    * when a new catalog is installed.
    */
+  /**
+   * Where the installed catalog serves poster images from, so the content
+   * security policy can name that origin. Null when no real catalog is
+   * installed and the fixtures are supplying placeholder tiles.
+   */
+  catalogImageBaseUrl(): string | null {
+    return this.imageConfig()?.baseUrl ?? null;
+  }
+
   private imageConfig(): { baseUrl: string; size: string } | null {
     const status = catalogStatus(this.database);
     const version = status.current?.version ?? null;
@@ -189,6 +207,59 @@ export class RoomService {
       );
     }
     return due.length;
+  }
+
+  /**
+   * Apply the retention policy: expire what is due, then delete the tombstones
+   * whose 24 hours are up.
+   *
+   * Expiry alone only revokes capabilities; it leaves participants, exposures,
+   * and interactions on disk. Until this ran on a schedule, a room nobody ever
+   * touched again kept that data forever, because expiry was applied lazily on
+   * request. A retention promise nothing enforces is not a retention promise.
+   */
+  applyRetention(): { expired: number; purged: number } {
+    const expired = this.expireDueRooms();
+    const purgeBefore = new Date(
+      this.clock().getTime() - TOMBSTONE_LIFETIME_MS,
+    ).toISOString();
+    const purged = repository.purgeExpiredRooms(this.database, purgeBefore);
+    if (purged > 0) {
+      // Room-scoped audit rows went with the rooms. This one is deliberately
+      // detail-free: recording which rooms were deleted would outlive the
+      // deletion it records.
+      repository.recordAudit(
+        this.database,
+        null,
+        'rooms.purged',
+        null,
+        this.nowIso(),
+      );
+    }
+    return { expired, purged };
+  }
+
+  /**
+   * Delete one room outright, for an operator answering a deletion request.
+   * Returns false if no such room exists, which is also what a caller sees for
+   * a room that was already purged.
+   */
+  purgeRoom(publicId: string): boolean {
+    const deleted = repository.purgeRoomByPublicId(this.database, publicId);
+    if (deleted === 0) return false;
+    repository.recordAudit(
+      this.database,
+      null,
+      'room.purged',
+      null,
+      this.nowIso(),
+    );
+    return true;
+  }
+
+  /** Row counts with no room data in them, for verifying a purge. */
+  retentionCounts(): repository.RetentionCounts {
+    return repository.retentionCounts(this.database);
   }
 
   createRoom(): CreatedRoom {

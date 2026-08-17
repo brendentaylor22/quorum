@@ -248,6 +248,23 @@ export const catalogSourceSchema = z.object({
 export type CatalogSource = z.infer<typeof catalogSourceSchema>;
 
 /**
+ * What this instance is, for the two things every deployment owes the people
+ * using it: a way to reach the source, and a way to read the privacy notice.
+ *
+ * The source URL is configuration rather than a constant because Quorum is
+ * AGPL-licensed. An operator running a modified copy owes their users *their*
+ * source, not the upstream repository's, and the only honest way to offer it is
+ * to let them say where it is.
+ */
+export const instanceInfoSchema = z.object({
+  sourceUrl: z.url(),
+  licence: z.string(),
+  /** Set by an operator who has modified Quorum, purely so the UI can say so. */
+  modified: z.boolean(),
+});
+export type InstanceInfo = z.infer<typeof instanceInfoSchema>;
+
+/**
  * Uniform error envelope. Invalid, expired, and unauthorized private links all
  * answer `not_found` so that room existence never leaks.
  */
@@ -256,6 +273,7 @@ export const errorCodeSchema = z.enum([
   'invalid_request',
   'conflict',
   'too_many_participants',
+  'rate_limited',
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 
