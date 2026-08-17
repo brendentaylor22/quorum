@@ -14,7 +14,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listTopCatalogIds } from '../rooms/repository.js';
+import { listSlateCandidateIds } from '../rooms/repository.js';
 import { RoomService } from '../rooms/service.js';
 import {
   CATALOG_DEFAULTS,
@@ -417,7 +417,7 @@ describe('0003 upgrade path', () => {
     const status = catalogStatus(database);
     expect(status.current?.version).toBe('synthetic-v1');
     expect(status.activeItems).toBe(1);
-    expect(listTopCatalogIds(database, 10)).toHaveLength(1);
+    expect(listSlateCandidateIds(database, 10)).toHaveLength(1);
   });
 });
 
@@ -447,16 +447,10 @@ describe('unrankedWriteItem', () => {
   });
 });
 
-describe('listTopCatalogIds', () => {
-  it('returns only active items, best rated first', () => {
-    const database = freshDatabase();
-    commit(database, 'v1', [
-      writeItem('low', { weightedRating: 5 }),
-      writeItem('high', { weightedRating: 9 }),
-      writeItem('mid', { weightedRating: 7 }),
-    ]);
-    const ids = listTopCatalogIds(database, 10);
-    const titles = ids.map((id) => {
+describe('listSlateCandidateIds', () => {
+  /** Provider references in pool order, best candidate first. */
+  function poolOrder(database: QuorumDatabase, poolSize: number): string[] {
+    return listSlateCandidateIds(database, poolSize).map((id) => {
       const row = database
         .prepare(
           'SELECT provider_ref AS reference FROM catalog_items WHERE id = ?',
@@ -464,7 +458,69 @@ describe('listTopCatalogIds', () => {
         .get(id) as { reference: string };
       return row.reference;
     });
-    expect(titles).toEqual(['high', 'mid', 'low']);
+  }
+
+  it('returns only active items, best rated first', () => {
+    const database = freshDatabase();
+    commit(database, 'v1', [
+      writeItem('low', { weightedRating: 5 }),
+      writeItem('high', { weightedRating: 9 }),
+      writeItem('mid', { weightedRating: 7 }),
+    ]);
+    // Vote count and year are identical here, so rating alone decides.
+    expect(poolOrder(database, 10)).toEqual(['high', 'mid', 'low']);
+  });
+
+  it('puts a recent, widely seen film ahead of a marginally better classic', () => {
+    const database = freshDatabase();
+    commit(database, 'v1', [
+      writeItem('classic', {
+        weightedRating: 8.4,
+        voteCount: 4000,
+        releaseYear: 1955,
+      }),
+      writeItem('blockbuster', {
+        weightedRating: 8,
+        voteCount: 25_000,
+        releaseYear: 2022,
+      }),
+      // The band the other two are normalised against.
+      writeItem('floor', {
+        weightedRating: 5,
+        voteCount: 0,
+        releaseYear: 1930,
+      }),
+    ]);
+    expect(poolOrder(database, 10)[0]).toBe('blockbuster');
+  });
+
+  it('keeps quality dominant over reach and recency', () => {
+    const database = freshDatabase();
+    commit(database, 'v1', [
+      writeItem('acclaimed', {
+        weightedRating: 8.5,
+        voteCount: 3000,
+        releaseYear: 1975,
+      }),
+      // Newer and far more seen, but well down the rating band.
+      writeItem('mediocre', {
+        weightedRating: 6,
+        voteCount: 60_000,
+        releaseYear: 2025,
+      }),
+      writeItem('floor', {
+        weightedRating: 5,
+        voteCount: 0,
+        releaseYear: 1930,
+      }),
+    ]);
+    expect(poolOrder(database, 10)[0]).toBe('acclaimed');
+  });
+
+  it('survives a catalog with no spread to normalise against', () => {
+    const database = freshDatabase();
+    commit(database, 'v1', [writeItem('only')]);
+    expect(poolOrder(database, 10)).toEqual(['only']);
   });
 
   it('caps the pool', () => {
@@ -476,19 +532,21 @@ describe('listTopCatalogIds', () => {
         writeItem(`m${index.toString()}`, { weightedRating: index }),
       ),
     );
-    expect(listTopCatalogIds(database, 3)).toHaveLength(3);
+    expect(listSlateCandidateIds(database, 3)).toHaveLength(3);
   });
 
   it('excludes retired items', () => {
     const database = freshDatabase();
     commit(database, 'v1', [writeItem('1'), writeItem('2')]);
     commit(database, 'v2', [writeItem('2')]);
-    expect(listTopCatalogIds(database, 10)).toHaveLength(1);
+    expect(listSlateCandidateIds(database, 10)).toHaveLength(1);
   });
 
   it('rejects a nonsensical pool size', () => {
     const database = freshDatabase();
-    expect(() => listTopCatalogIds(database, 0)).toThrow(/positive integer/u);
+    expect(() => listSlateCandidateIds(database, 0)).toThrow(
+      /positive integer/u,
+    );
   });
 });
 
@@ -606,7 +664,7 @@ describe('importTmdbCatalog', () => {
     expect(catalogStatus(database).activeItems).toBe(3);
 
     // The best-evidenced high rating must lead the pool.
-    const [best] = listTopCatalogIds(database, 10);
+    const [best] = listSlateCandidateIds(database, 10);
     const row = database
       .prepare(
         'SELECT provider_ref AS reference FROM catalog_items WHERE id = ?',

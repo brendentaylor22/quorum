@@ -3,9 +3,10 @@ import { z } from 'zod';
 /** Exactly 20 movies per room, per the product contract. */
 export const SLATE_SIZE = 20;
 /**
- * A room's 20 are drawn at random from the best-rated slice of the catalog,
- * not from the whole of it. Wide enough that two rooms rarely collide, narrow
- * enough that everything in it is plausibly a "top movie of all time".
+ * A room's 20 are drawn at random from a shortlist of the catalog, not from
+ * the whole of it. Wide enough that two rooms rarely collide, narrow enough
+ * that everything in it is worth someone's evening. How the shortlist is
+ * ranked lives in `listSlateCandidateIds`.
  */
 export const SLATE_CANDIDATE_POOL_SIZE = 500;
 /** Hard cap from `docs/phase-0/retention-and-abuse.md`. */

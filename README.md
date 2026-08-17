@@ -83,8 +83,25 @@ If prose and examples ever disagree, the examples win.
 
 ### Where the 20 films come from
 
-**Round 1** — 20 drawn, seeded-random, from the best-rated slice of the local
-catalog. No personalisation, because there is nothing yet to personalise from.
+**Round 1** — 20 drawn, seeded-random, from a shortlist of the local catalog.
+No personalisation, because there is nothing yet to personalise from.
+
+The shortlist is not simply the best-rated films. Ranking on rating alone
+answers "best film of all time", and the honest answer to that is a wall of
+restored classics and subtitled festival winners — a defensible list, and a bad
+first slate for a group deciding what to watch tonight. Three normalised
+signals decide the shortlist instead:
+
+| Signal         | Weight | Source                                     |
+| -------------- | -----: | ------------------------------------------ |
+| **Quality**    |   0.60 | Bayesian weighted rating, normalised       |
+| **Mainstream** |   0.22 | Vote count, saturating at 2 500 votes      |
+| **Recency**    |   0.18 | Release year, normalised over catalog span |
+
+Quality still dominates, so nothing bad gets in; reach and recency decide which
+of the many good films surface first. Every term reads stored columns and the
+pool's own bounds, and ties break on id, so the shortlist is deterministic for
+a catalog version — which is what makes a persisted slate seed reproducible.
 
 **Round 2+** — content-based scoring over the group's own swipes:
 

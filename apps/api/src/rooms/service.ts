@@ -338,7 +338,7 @@ export class RoomService {
     return { participantId: publicId, sessionToken, roomId: room.publicId };
   }
 
-  /** Open round 1: 20 drawn at random from the best-rated pool. */
+  /** Open round 1: 20 drawn at random from the slate candidate pool. */
   start(roomPublicId: string, hostToken: string | undefined): RoomRow {
     const room = this.requireHost(roomPublicId, hostToken);
     if (room.state !== 'LOBBY') throw conflict('Room has already started');
@@ -349,7 +349,7 @@ export class RoomService {
     const version = repository.catalogVersion(this.database);
     if (version === null) throw conflict('Catalog is empty');
     const seed = issueCapability();
-    const pool = repository.listTopCatalogIds(
+    const pool = repository.listSlateCandidateIds(
       this.database,
       SLATE_CANDIDATE_POOL_SIZE,
     );
@@ -751,7 +751,7 @@ export class RoomService {
       repository.listRoomCatalogItemIds(this.database, roomId),
     );
     return repository
-      .listTopCatalogIds(this.database, RECOMMENDER_POOL_SIZE)
+      .listSlateCandidateIds(this.database, RECOMMENDER_POOL_SIZE)
       .filter((id) => !seen.has(id));
   }
 

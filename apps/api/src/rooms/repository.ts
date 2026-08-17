@@ -186,13 +186,46 @@ export function importCatalog(
 }
 
 /**
- * Candidate pool for a slate: the best-rated active items, capped so a room
- * draws from "top movies" rather than the whole catalog.
+ * How the slate candidate pool is ordered.
  *
- * Ordering by `weighted_rating` then `id` keeps the pool deterministic, which
- * is what makes a persisted slate seed reproducible.
+ * Ranking on `weighted_rating` alone answers "best film of all time", and the
+ * honest answer to that is a wall of restored classics and subtitled festival
+ * winners. It is a defensible list and a bad first slate: a group that opened
+ * the app to pick tonight's film recognises almost none of it. Two more
+ * signals pull the pool back towards what people have actually seen and
+ * actually might watch, without abandoning quality as the dominant term.
+ *
+ * - `quality` is the Bayesian rating, normalised across the installed catalog.
+ * - `mainstream` is vote count, saturating: it separates a film everyone has
+ *   heard of from one only critics have, and stops one blockbuster with an
+ *   order of magnitude more votes than anything else owning the whole scale.
+ * - `recency` is release year, normalised across the catalog's own span.
+ *
+ * Quality still carries the most weight, so nothing bad gets in; the other two
+ * decide which of the many good films surface first.
  */
-export function listTopCatalogIds(
+export const SLATE_POOL_WEIGHTS = {
+  quality: 0.6,
+  mainstream: 0.22,
+  recency: 0.18,
+} as const;
+
+/**
+ * Vote count at which a film scores half of the mainstream term. Set near the
+ * point where a title has broken out of enthusiast audiences; well-known films
+ * clear it comfortably and the curve flattens above it.
+ */
+export const MAINSTREAM_HALF_VOTES = 2500;
+
+/**
+ * Candidate pool for a slate: active items ranked by `SLATE_POOL_WEIGHTS` and
+ * capped, so a room draws from a shortlist rather than the whole catalog.
+ *
+ * Every term is derived from stored columns and the pool's own bounds, and
+ * ties break on `id`, so the ordering is deterministic for a given catalog
+ * version — which is what makes a persisted slate seed reproducible.
+ */
+export function listSlateCandidateIds(
   database: QuorumDatabase,
   poolSize: number,
 ): number[] {
@@ -202,12 +235,41 @@ export function listTopCatalogIds(
   return (
     database
       .prepare(
-        `SELECT id FROM catalog_items
-          WHERE active = 1
-          ORDER BY weighted_rating DESC, id
+        // A degenerate catalog — one item, or every item sharing a year —
+        // collapses a normalised term to zero rather than dividing by it.
+        `WITH bounds AS (
+           SELECT min(weighted_rating) AS lowRating,
+                  max(weighted_rating) AS highRating,
+                  min(release_year) AS firstYear,
+                  max(release_year) AS lastYear
+             FROM catalog_items
+            WHERE active = 1
+         )
+         SELECT catalog_items.id AS id
+           FROM catalog_items, bounds
+          WHERE catalog_items.active = 1
+          ORDER BY
+            ? * (CASE WHEN bounds.highRating > bounds.lowRating
+                      THEN (catalog_items.weighted_rating - bounds.lowRating)
+                           / (bounds.highRating - bounds.lowRating)
+                      ELSE 0 END)
+          + ? * (catalog_items.vote_count * 1.0
+                 / (catalog_items.vote_count + ?))
+          + ? * (CASE WHEN bounds.lastYear > bounds.firstYear
+                      THEN (coalesce(catalog_items.release_year, bounds.firstYear)
+                            - bounds.firstYear) * 1.0
+                           / (bounds.lastYear - bounds.firstYear)
+                      ELSE 0 END)
+            DESC, catalog_items.id
           LIMIT ?`,
       )
-      .all(poolSize) as { id: number }[]
+      .all(
+        SLATE_POOL_WEIGHTS.quality,
+        SLATE_POOL_WEIGHTS.mainstream,
+        MAINSTREAM_HALF_VOTES,
+        SLATE_POOL_WEIGHTS.recency,
+        poolSize,
+      ) as { id: number }[]
   ).map((row) => row.id);
 }
 
