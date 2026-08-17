@@ -1,5 +1,10 @@
 import { databasePath } from '@quorum/database';
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createHmac,
+  randomBytes,
+  randomInt,
+  timingSafeEqual,
+} from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -8,6 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { INVITE_WORDS } from './invite-words.js';
 
 /** 256 bits of entropy per capability; the contract floor is 128. */
 const CAPABILITY_BYTES = 32;
@@ -71,6 +77,38 @@ export function secureCookies(): boolean {
 
 export function issueCapability(): string {
   return randomBytes(CAPABILITY_BYTES).toString('base64url');
+}
+
+/** Words per invite phrase. See `issueInviteCapability` for the trade. */
+export const INVITE_PHRASE_WORDS = 6;
+
+/**
+ * An invite capability, as words rather than base64.
+ *
+ * The invite is the one capability that gets read aloud, retyped from a
+ * screen, or dictated across a room, and 43 characters of base64 survives none
+ * of those. Six words from a 7772-word list carry ~77.5 bits — below the
+ * 256-bit host and session tokens, and below the 128-bit floor the other
+ * capabilities hold to.
+ *
+ * That is a deliberate, bounded reduction. An invite grants entry to one room
+ * that expires within 24 hours and holds at most 20 people; it confers no host
+ * authority, and the host token it is issued beside is untouched. At ~77.5
+ * bits an attacker averages ~10^23 guesses, which no amount of unthrottled
+ * HTTP closes within a room's lifetime. It is still worth far less margin than
+ * the rest of the system carries, which is why `docs/phase-0/threat-model.md`
+ * now records the invite floor separately from the others.
+ *
+ * `randomInt` rather than a modulo of random bytes: 2^n is not divisible by
+ * 7772, so folding bytes down would quietly favour the front of the list and
+ * cost real entropy. Node's `randomInt` rejects out-of-range draws instead.
+ */
+export function issueInviteCapability(): string {
+  const words: string[] = [];
+  for (let index = 0; index < INVITE_PHRASE_WORDS; index += 1) {
+    words.push(INVITE_WORDS[randomInt(INVITE_WORDS.length)] ?? '');
+  }
+  return words.join('-');
 }
 
 export function issuePublicId(): string {

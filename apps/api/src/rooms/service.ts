@@ -24,6 +24,7 @@ import { catalogStatus } from '../catalog/repository.js';
 import {
   hashCapability,
   issueCapability,
+  issueInviteCapability,
   issuePublicId,
 } from '../capabilities.js';
 import * as repository from './repository.js';
@@ -191,7 +192,9 @@ export class RoomService {
   }
 
   createRoom(): CreatedRoom {
-    const inviteToken = issueCapability();
+    // Only the invite is words: it is the one link that gets read aloud or
+    // retyped. The host capability is never shared and keeps its full 256 bits.
+    const inviteToken = issueInviteCapability();
     const hostToken = issueCapability();
     const room = repository.insertRoom(this.database, {
       publicId: issuePublicId(),

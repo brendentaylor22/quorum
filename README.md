@@ -160,9 +160,17 @@ room. Details, obligations, and configuration:
 
 ### Security model
 
-- **Capability links, not accounts.** Invite, host, and session tokens each
-  carry 256 bits of entropy. The database stores only HMAC keyed hashes, so a
-  database read does not yield working links.
+- **Capability links, not accounts.** Host and session tokens carry 256 bits of
+  entropy. The database stores only HMAC keyed hashes, so a database read does
+  not yield working links.
+- **The invite is six words.** `/join/copper-harbor-vivid-lantern-quiet-ember`,
+  drawn uniformly from the 7772-word EFF diceware list: ~77.5 bits. That is
+  deliberately below the 128-bit floor the other capabilities hold to, because
+  the invite is the one link that gets read aloud or retyped across a room. The
+  reduction is bounded to it — an invite confers no host authority, expires
+  with a lobby inside 24 hours, and admits at most 20 people. At ~10²³ expected
+  guesses no amount of unthrottled HTTP closes that gap within a room's life.
+  Recorded as T01a in the [threat model](docs/phase-0/threat-model.md).
 - **Split capabilities.** Host control (start, close, expire) travels in a
   header, not a cookie. A stolen participant cookie grants that participant's
   remaining actions in that one room — never host control, never another

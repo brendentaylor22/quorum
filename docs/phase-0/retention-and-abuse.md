@@ -26,7 +26,8 @@ Purge deletes keyed token hashes, participants, room items, exposures, interacti
 | Concurrent active rooms declared support target | 20 |
 | Display name | 1–40 Unicode characters after trim; control/bidi override characters rejected |
 | JSON request body | 16 KiB |
-| Invite/host/session token entropy | At least 128 bits |
+| Host/session token entropy | At least 128 bits (issued at 256) |
+| Invite phrase entropy | At least 77 bits — six words from a 7772-word list. Traded down from 128 so the link can be read aloud and retyped; see threat model T01a |
 | Lobby lifetime | 24 hours |
 | Completed room lifetime | 7 days |
 

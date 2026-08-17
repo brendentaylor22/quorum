@@ -47,7 +47,12 @@ export const publicIdSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{10,64}$/u, 'Malformed identifier');
 
-/** Capability tokens carry at least 128 bits of entropy. */
+/**
+ * Shape check for a capability in a URL, not an entropy guarantee — the
+ * issuing side owns that. Host and session tokens are 256-bit base64url;
+ * invites are six hyphenated words, which fall inside the same character
+ * class and length band. See `issueInviteCapability` for that trade.
+ */
 export const capabilityTokenSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{22,128}$/u, 'Malformed capability');

@@ -23,7 +23,8 @@ Trust ends at every arrow. Browser state, forwarded headers, container image, ex
 
 | ID | Threat | Attack and impact | Required prevention/detection | Verification evidence |
 |---|---|---|---|---|
-| T01 | Token discovery | Guess invite/host/session capability; enter or control room | >=128 random bits; keyed hashes; uniform failures; rate limits | Entropy unit test; invalid/modified-token integration tests; log redaction test |
+| T01 | Token discovery | Guess invite/host/session capability; enter or control room | Host/session >=128 random bits; invite >=77 bits (see T01a); keyed hashes; uniform failures; rate limits | Entropy unit test; invalid/modified-token integration tests; log redaction test |
+| T01a | Invite phrase guessing | Guess a six-word invite phrase; enter one room as an extra participant | Accepted reduction to ~77.5 bits so the invite can be spoken and retyped; bounded to the invite alone, which grants no host authority, expires with a <=24h lobby, and admits at most 20 people; host/session capabilities unchanged at 256 bits | Word-list size and phrase entropy unit tests; uniform-draw test; `capabilities.ts` records the trade |
 | T02 | Room hijack | Invite recipient obtains host authority | Separate capabilities and endpoints; host secret never in invite/session; explicit host auth | Participant-close denial test; URL/referrer inspection |
 | T03 | Vote forgery | Submit for another participant, room, item, or twice | Server derives identity from session; relational ownership checks; unique exposure interaction; transaction | Cross-room/cross-participant tests; concurrent duplicate test |
 | T04 | Scraping | Enumerate rooms or bulk-copy catalog/posters | Unguessable URLs; uniform responses; request caps; no list/search endpoint; Cloudflare rate control | Enumeration test; route inventory; rate-limit evidence |
