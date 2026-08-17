@@ -10,7 +10,7 @@ token_secret_file="$project_dir/deploy/secrets/token-secret"
 runtime_uid=10001
 
 usage() {
-  printf '%s\n' 'Usage: quorumctl start [--tunnel] | stop | status | doctor | migrate | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
+  printf '%s\n' 'Usage: quorumctl start [--tunnel|--proxy] | stop | status | doctor | migrate | purge [--room <roomId>] | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
   exit 2
 }
 
@@ -67,16 +67,43 @@ require_token_secret() {
   fi
 }
 
+# Caddy cannot obtain a certificate without a hostname, and an operator who
+# never hears about a certificate problem finds out when the site stops
+# working. Compose cannot enforce this itself without making the whole file
+# unvalidatable, so it is enforced here, where the operator is standing.
+require_proxy_settings() {
+  missing=''
+  for name in QUORUM_PUBLIC_HOSTNAME QUORUM_ACME_EMAIL; do
+    value=$(sed -n "s/^[[:space:]]*$name[[:space:]]*=[[:space:]]*//p" "$env_file" | sed -n '1p')
+    [ -n "${value:-}" ] || missing="$missing $name"
+  done
+  if [ -n "$missing" ]; then
+    printf 'Reverse proxy needs these set in %s:%s\n' "$env_file" "$missing" >&2
+    printf '%s\n' 'QUORUM_PUBLIC_HOSTNAME must resolve to this host, with 80 and 443 reaching it.' >&2
+    exit 1
+  fi
+}
+
 command=${1:-}
 case "$command" in
   start)
     require_env
     require_token_secret
-    if [ "${2:-}" = '--tunnel' ]; then
-      compose --profile tunnel up --detach
-    else
-      compose up --detach app
-    fi
+    case "${2:-}" in
+      --tunnel) compose --profile tunnel up --detach ;;
+      --proxy)
+        require_proxy_settings
+        compose --profile proxy up --detach
+        ;;
+      '')
+        # No ingress: the app runs on an internal network with no published
+        # port, so nothing outside Docker can reach it. Useful for migrate,
+        # doctor, and catalog work; not a way to serve anyone.
+        compose up --detach app
+        printf '%s\n' 'Started without ingress. Nothing can reach this instance; use --tunnel or --proxy to serve it.' >&2
+        ;;
+      *) usage ;;
+    esac
     ;;
   stop)
     require_env
@@ -93,6 +120,25 @@ case "$command" in
   migrate)
     require_env
     compose exec --no-TTY app node apps/api/dist/cli.js migrate
+    ;;
+  # Retention runs on a schedule inside the server; this is for an operator
+  # answering a deletion request, or wanting to watch retention happen.
+  purge)
+    require_env
+    room_flag=${2:-}
+    if [ -n "$room_flag" ]; then
+      [ "$room_flag" = '--room' ] || usage
+      room_id=${3:-}
+      case "$room_id" in
+        ''|*[!A-Za-z0-9_-]*) usage ;;
+      esac
+      printf 'Permanently delete room %s and all of its votes? Type the room id to continue: ' "$room_id" >&2
+      read -r confirmation
+      [ "$confirmation" = "$room_id" ] || { printf '%s\n' 'Purge cancelled.' >&2; exit 1; }
+      compose exec --no-TTY app node apps/api/dist/cli.js purge --room "$room_id"
+    else
+      compose exec --no-TTY app node apps/api/dist/cli.js purge
+    fi
     ;;
   backup)
     require_env

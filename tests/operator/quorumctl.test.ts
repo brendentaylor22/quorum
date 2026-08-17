@@ -132,6 +132,7 @@ describe('quorumctl', () => {
       'status',
       'doctor',
       'migrate',
+      'purge',
       'backup',
       'restore',
       'logs',
@@ -167,6 +168,86 @@ describe('quorumctl', () => {
     const result = await invoke(['start']);
     expect(result.status).toBe(0);
     expect(result.dockerCalls.join('\n')).toContain('up --detach app');
+  });
+
+  it('starts each supported ingress shape, and refuses an unknown one', async () => {
+    writeFileSync(sandbox.envFile, pinnedEnv);
+    mkdirSync(join(sandbox.root, 'deploy/secrets'), { recursive: true });
+    writeFileSync(
+      join(sandbox.root, 'deploy/secrets/token-secret'),
+      'a'.repeat(64),
+    );
+
+    const tunnel = await invoke(['start', '--tunnel']);
+    expect(tunnel.status).toBe(0);
+    expect(tunnel.dockerCalls.join('\n')).toContain('--profile tunnel');
+
+    // The proxy cannot get a certificate without a hostname, and Compose
+    // cannot enforce that without making the topology unvalidatable.
+    const unconfigured = await invoke(['start', '--proxy']);
+    expect(unconfigured.status).toBe(1);
+    expect(unconfigured.stderr).toContain('QUORUM_PUBLIC_HOSTNAME');
+    expect(unconfigured.stderr).toContain('QUORUM_ACME_EMAIL');
+
+    writeFileSync(
+      sandbox.envFile,
+      `${pinnedEnv}QUORUM_PUBLIC_HOSTNAME=quorum.example.org\nQUORUM_ACME_EMAIL=you@example.org\n`,
+    );
+    const proxy = await invoke(['start', '--proxy']);
+    expect(proxy.status).toBe(0);
+    expect(proxy.dockerCalls.join('\n')).toContain('--profile proxy');
+
+    // A typo must not silently start an instance nobody can reach.
+    const wrong = await invoke(['start', '--tunnnel']);
+    expect(wrong.status).toBe(2);
+  });
+
+  it('says plainly that a start with no ingress serves nobody', async () => {
+    writeFileSync(sandbox.envFile, pinnedEnv);
+    mkdirSync(join(sandbox.root, 'deploy/secrets'), { recursive: true });
+    writeFileSync(
+      join(sandbox.root, 'deploy/secrets/token-secret'),
+      'a'.repeat(64),
+    );
+
+    const result = await invoke(['start']);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain('Nothing can reach this instance');
+  });
+
+  it('runs retention on demand, and requires confirmation to purge one room', async () => {
+    writeFileSync(sandbox.envFile, pinnedEnv);
+
+    const sweep = await invoke(['purge']);
+    expect(sweep.status).toBe(0);
+    expect(sweep.dockerCalls.join('\n')).toContain('cli.js purge');
+
+    // Deleting a named room is destructive, so it must not proceed unless the
+    // operator types the room id back.
+    const wrongConfirmation = await execFileAsync(
+      'sh',
+      ['-c', `printf 'yes\\n' | '${sandbox.script}' purge --room abc123`],
+      {
+        env: {
+          ...process.env,
+          PATH: `${sandbox.binDirectory}:${process.env.PATH ?? ''}`,
+        },
+      },
+    ).catch(asFailure);
+    expect(wrongConfirmation.stderr).toContain('Purge cancelled');
+
+    const confirmed = await execFileAsync(
+      'sh',
+      ['-c', `printf 'abc123\\n' | '${sandbox.script}' purge --room abc123`],
+      {
+        env: {
+          ...process.env,
+          PATH: `${sandbox.binDirectory}:${process.env.PATH ?? ''}`,
+        },
+      },
+    ).catch(asFailure);
+    expect(confirmed.stderr).not.toContain('Purge cancelled');
   });
 
   it('runs migrate inside the app container', async () => {

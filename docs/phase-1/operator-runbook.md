@@ -1,5 +1,11 @@
 # Phase 1 operator runbook
 
+This runbook is written for the author's own dedicated-VM deployment behind a
+Cloudflare tunnel. If you are installing Quorum yourself, start with
+[self-hosting](../self-hosting.md), which covers both ingress shapes and every
+configuration variable; this document is the stricter, more specific procedure
+underneath it.
+
 ## Fresh dedicated VM
 
 No repository clone, Node.js toolchain, compiler, or source tree belongs on VM. GitHub builds Quorum. Release workflow attaches pull-only deployment bundle containing Compose file, operator script, runbooks, and `.env` already pinned to published GHCR digest.
@@ -40,7 +46,14 @@ No repository clone, Node.js toolchain, compiler, or source tree belongs on VM. 
    ```
 
 3. Inspect `RELEASE` and `deploy/.env`. `QUORUM_IMAGE` must contain exact `ghcr.io/brendentaylor22/quorum@sha256:...` identity, never floating tag.
-4. Copy `deploy/cloudflared/config.example.yml` to `deploy/cloudflared/config.yml` and set tunnel UUID/hostname. Place tunnel credential JSON at `deploy/secrets/tunnel-credentials.json`. Ensure numeric group `65532` exists, then set credential owner to deployment administrator, group to `65532`, and mode to `0440`; non-root `cloudflared` runs with that GID.
+4. Choose an ingress shape. This runbook uses the Cloudflare tunnel; `--proxy`
+   runs Caddy inside the Compose project instead, and needs
+   `QUORUM_PUBLIC_HOSTNAME` and `QUORUM_ACME_EMAIL` in `deploy/.env` plus ports
+   80 and 443 reaching the host. Either way, set `QUORUM_TRUST_PROXY` in
+   `deploy/.env`: without it every caller shares one rate-limit bucket, because
+   every request appears to come from the ingress container.
+
+   For the tunnel, copy `deploy/cloudflared/config.example.yml` to `deploy/cloudflared/config.yml` and set tunnel UUID/hostname. Place tunnel credential JSON at `deploy/secrets/tunnel-credentials.json`. Ensure numeric group `65532` exists, then set credential owner to deployment administrator, group to `65532`, and mode to `0440`; non-root `cloudflared` runs with that GID.
 
    ```sh
    getent group 65532 >/dev/null || sudo groupadd --gid 65532 cloudflared-runtime
@@ -105,12 +118,13 @@ To test restored volume, set `QUORUM_DATA_VOLUME` in `deploy/.env` to new volume
 
 ## Routine operations
 
-- `scripts/quorumctl start [--tunnel]`: start app, optionally tunnel.
+- `scripts/quorumctl start [--tunnel|--proxy]`: start app with the chosen ingress. With neither flag the app runs with no route in at all, which is useful for migrate and catalog work and serves nobody.
 - `scripts/quorumctl stop`: stop containers; never removes volume.
 - `scripts/quorumctl status`: show container and health state.
 - `scripts/quorumctl doctor`: migrate forward, then verify SQLite integrity and counts.
 - `scripts/quorumctl migrate`: apply pending forward-only migrations and report applied names.
 - `scripts/quorumctl logs`: follow last 200 lines.
+- `scripts/quorumctl purge [--room ROOM_ID]`: apply retention now, or delete one room outright for a deletion request. The single-room form requires typing the room id back.
 - `scripts/quorumctl backup NAME.db`: make verified online backup.
 - `scripts/quorumctl restore NAME.db NEW_VOLUME`: verified clean-volume restore.
 

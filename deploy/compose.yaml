@@ -19,6 +19,15 @@ services:
     environment:
       # Keyed hashes of invite, host, and session capabilities derive from this.
       QUORUM_TOKEN_SECRET_FILE: /run/secrets/quorum_token_secret
+      # Whose `X-Forwarded-For` to believe. Empty means nobody's, which is
+      # correct with no proxy in front. Both the tunnel and the proxy profile
+      # need this set, or every caller shares one rate-limit bucket. See
+      # docs/self-hosting.md.
+      QUORUM_TRUST_PROXY: ${QUORUM_TRUST_PROXY:-}
+      # Multiplies every rate limit. 1 is the documented policy; raise it for a
+      # deployment behind an unusually large shared address.
+      QUORUM_RATE_LIMIT_SCALE: ${QUORUM_RATE_LIMIT_SCALE:-1}
+      QUORUM_RETENTION_SWEEP_MINUTES: ${QUORUM_RETENTION_SWEEP_MINUTES:-15}
     secrets:
       - quorum_token_secret
     volumes:
@@ -116,6 +125,60 @@ services:
       app:
         condition: service_healthy
 
+  # The alternative to a Cloudflare tunnel, for an operator who would rather
+  # own their own ingress. Same isolation shape as `cloudflared`: it joins
+  # `quorum-edge` to reach the application and `proxy-egress` to reach the
+  # certificate authority, and the application still publishes no port and
+  # still has no route out.
+  #
+  #   scripts/quorumctl start --proxy
+  #
+  # Ports 80 and 443 must reach this host, and QUORUM_PUBLIC_HOSTNAME must
+  # resolve to it, or the certificate cannot be issued.
+  proxy:
+    # caddy:2-alpine, pinned by digest like every other image here.
+    image: caddy@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    profiles:
+      - proxy
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    # Binding 80 and 443 is the one capability this container genuinely needs.
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    environment:
+      # Both are required to serve, and `quorumctl start --proxy` refuses
+      # without them. They are not `:?` here because that would make the whole
+      # topology unvalidatable — `docker compose config` interpolates every
+      # service, profile or no profile.
+      QUORUM_PUBLIC_HOSTNAME: ${QUORUM_PUBLIC_HOSTNAME:-}
+      QUORUM_ACME_EMAIL: ${QUORUM_ACME_EMAIL:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Losing this volume means
+      # re-issuing certificates, which rate limits at the CA make unpleasant.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - quorum-edge
+      - proxy-egress
+    depends_on:
+      app:
+        condition: service_healthy
+
 secrets:
   quorum_token_secret:
     file: ./secrets/token-secret
@@ -125,6 +188,10 @@ secrets:
 volumes:
   quorum-data:
     name: ${QUORUM_DATA_VOLUME:-quorum-data}
+  caddy-data:
+    name: quorum-caddy-data
+  caddy-config:
+    name: quorum-caddy-config
 
 networks:
   quorum-edge:
@@ -132,6 +199,10 @@ networks:
     internal: true
   tunnel-egress:
     name: quorum-tunnel-egress
+  # Only the reverse proxy joins this, and only to reach the certificate
+  # authority. Same reasoning as `tunnel-egress`.
+  proxy-egress:
+    name: quorum-proxy-egress
   # Only the catalog importer joins this. Keeping it separate from
   # `quorum-edge` is what preserves "the application cannot reach the Internet".
   catalog-egress:
