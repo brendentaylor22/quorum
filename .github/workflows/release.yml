@@ -41,6 +41,16 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      # Playwright drives the built server and client, so both must exist.
+      - run: npm run build
+      # A release can be cut by pushing straight to main, which never runs the
+      # pull-request checks. The browser suite is the only evidence that the
+      # room flow works end to end, so it gates the publish rather than only
+      # the review.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser flows
+        run: npx playwright test --config tests/playwright.config.ts
       - run: npm run audit:prod
       - run: npm run licenses
       - name: Set up Buildx
@@ -55,6 +65,11 @@ jobs:
           build-args: VCS_REF=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Publishing an image that cannot boot is worse than not publishing: it
+      # ships with a digest, an SBOM, and a clean scan attesting to it. This
+      # runs before the push for exactly that reason.
+      - name: Smoke test the image before publishing
+        run: scripts/smoke-image.sh quorum:release-scan
       - name: Block critical and high findings
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
