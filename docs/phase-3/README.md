@@ -262,9 +262,11 @@ the Internet. Its access log is switched off, because capability tokens are in
 the URL path and a proxy log would put back exactly what
 [`logging.ts`](../../apps/api/src/logging.ts) removes.
 
-`quorumctl start` now takes `--tunnel` or `--proxy`, rejects an unrecognised
-flag rather than silently starting an unreachable instance, and says plainly
-when started with no ingress at all that it is serving nobody.
+`quorumctl start` now takes `--tunnel` or `--proxy` — and, added after this
+phase, `--existing-ingress` for a proxy the host already runs, which joins
+`quorum-edge` from its own Compose project. It rejects an unrecognised flag
+rather than silently starting an unreachable instance, and says plainly when
+started with no ingress at all that it is serving nobody.
 
 Publishing the application's port directly is documented as unsupported rather
 than left to be discovered: `Secure` cookies are unconditional in production, so
@@ -272,12 +274,14 @@ over plain HTTP no session cookie is stored and nobody can vote.
 
 [docs/self-hosting.md](../self-hosting.md) is the guide written for someone who
 is not the author: what the AGPL and TMDB's terms actually oblige them to,
-getting the bundle, the token secret, both ingress shapes, importing a catalog,
+getting the files, the token secret, every ingress shape, importing a catalog,
 routine operation, a full configuration reference for all 20-odd `QUORUM_*`
 variables, and a troubleshooting section built from the failure modes this work
-turned up. `deploy/.env.example` and the release bundle carry the same options,
-and the bundle now ships the licence, `SECURITY.md`, the proxy config, and this
-guide.
+turned up. It has since been restructured to lead with the ordinary
+copy-`.env.example`-and-`docker compose up` install, with the release bundle as
+the option for a host that wants a checksum and a digest pin without doing them
+by hand. `deploy/.env.example` and the bundle carry the same options, and the
+bundle ships the licence, `SECURITY.md`, the proxy config, and this guide.
 
 Evidence: `tests/operator/quorumctl.test.ts` covers both ingress flags, the
 rejection of an unknown one, the no-ingress warning, and the purge command
