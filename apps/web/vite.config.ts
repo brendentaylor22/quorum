@@ -7,6 +7,15 @@ export default defineConfig({
   plugins: [react()],
   build: {
     sourcemap: false,
+    /*
+     * Ship small assets as files rather than inlining them. Vite's data-URI
+     * inlining re-encodes an SVG — it URL-escapes it and rewrites attribute
+     * quoting — which is fine for a decoration and not fine for TMDB's logo,
+     * which their terms require be used unmodified. As a file it stays
+     * byte-identical to what TMDB published, and `shasum` can prove it.
+     * See apps/web/src/assets/README.md.
+     */
+    assetsInlineLimit: 0,
   },
   server: {
     port: Number(process.env.QUORUM_WEB_PORT ?? 5173),

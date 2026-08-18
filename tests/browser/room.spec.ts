@@ -371,4 +371,15 @@ test('the privacy notice and source offer are reachable from any page', async ({
   await expect(page.getByText('No account, no email')).toBeVisible();
   await expect(page.getByText('AGPL-3.0-or-later')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Source' })).toBeVisible();
+
+  // This instance runs on the fixture catalogue, which is synthetic and uses no
+  // TMDB data. TMDB branding is owed only where their data is actually shown,
+  // so the credits section and its logo must be absent here. The positive case
+  // needs an imported TMDB catalogue, which needs a credential CI does not have.
+  await expect(
+    page.getByRole('heading', { name: 'Where the movie data comes from' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('img', { name: 'The Movie Database (TMDB)' }),
+  ).toHaveCount(0);
 });
