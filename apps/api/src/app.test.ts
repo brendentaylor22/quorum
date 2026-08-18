@@ -174,3 +174,150 @@ describe('operator-only room creation', () => {
     expect(second.statusCode).toBe(409);
   });
 });
+
+describe('host claim', () => {
+  async function freshApp() {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-api-'));
+    const app = await buildApp({ databasePath: join(directory, 'quorum.db') });
+    apps.push(app);
+    return app;
+  }
+
+  async function createRoom(app: Awaited<ReturnType<typeof buildApp>>) {
+    return (
+      await app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        headers: { [REQUEST_HEADER]: '1' },
+      })
+    ).json<CreateRoomResponse>();
+  }
+
+  it('gives the first device to open the host screen a host session', async () => {
+    const app = await freshApp();
+    const created = await createRoom(app);
+
+    const opened = await app.inject({
+      method: 'GET',
+      url: `/api/host/${created.hostToken}`,
+    });
+
+    expect(opened.statusCode).toBe(200);
+    const claim = opened.cookies.find(
+      (cookie) => cookie.name === `quorum_host_${created.roomId}`,
+    );
+    expect(claim?.value).toBeTruthy();
+    expect(claim?.httpOnly).toBe(true);
+
+    // The claim alone drives host controls, so a link truncated on the way to
+    // a phone does not cost the host their room.
+    const started = await app.inject({
+      method: 'POST',
+      url: `/api/rooms/${created.roomId}/start`,
+      headers: { [REQUEST_HEADER]: '1' },
+      cookies: { [`quorum_host_${created.roomId}`]: claim?.value ?? '' },
+    });
+    // 409, not 404: the claim authenticated the host, and the room simply has
+    // nobody in it yet.
+    expect(started.statusCode).toBe(409);
+    expect(started.json<ErrorResponse>().error).toBe('conflict');
+  });
+
+  it('reissues the claim to a later device holding the capability', async () => {
+    const app = await freshApp();
+    const created = await createRoom(app);
+
+    const first = await app.inject({
+      method: 'GET',
+      url: `/api/host/${created.hostToken}`,
+    });
+    const firstClaim =
+      first.cookies.find(
+        (cookie) => cookie.name === `quorum_host_${created.roomId}`,
+      )?.value ?? '';
+
+    const second = await app.inject({
+      method: 'GET',
+      url: `/api/host/${created.hostToken}`,
+    });
+    const secondClaim =
+      second.cookies.find(
+        (cookie) => cookie.name === `quorum_host_${created.roomId}`,
+      )?.value ?? '';
+
+    expect(secondClaim).not.toBe('');
+    expect(secondClaim).not.toBe(firstClaim);
+
+    // The takeover retires the earlier device's session; the capability it
+    // came from still works, which is what makes this a move rather than a
+    // lockout.
+    const stale = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${created.roomId}`,
+      cookies: { [`quorum_host_${created.roomId}`]: firstClaim },
+    });
+    expect(stale.statusCode).toBe(404);
+  });
+
+  it('claims the room back for a device whose session was superseded', async () => {
+    const app = await freshApp();
+    const created = await createRoom(app);
+
+    const first = await app.inject({
+      method: 'GET',
+      url: `/api/host/${created.hostToken}`,
+    });
+    const firstClaim =
+      first.cookies.find(
+        (cookie) => cookie.name === `quorum_host_${created.roomId}`,
+      )?.value ?? '';
+    await app.inject({ method: 'GET', url: `/api/host/${created.hostToken}` });
+
+    // The first device reloads with a cookie another device has retired. It
+    // still holds the capability, so it takes the room back instead of seeing
+    // the not-found that a bad capability earns.
+    const reload = await app.inject({
+      method: 'GET',
+      url: `/api/host/${created.hostToken}`,
+      cookies: { [`quorum_host_${created.roomId}`]: firstClaim },
+    });
+    expect(reload.statusCode).toBe(200);
+    expect(
+      reload.cookies.find(
+        (cookie) => cookie.name === `quorum_host_${created.roomId}`,
+      )?.value,
+    ).not.toBe(firstClaim);
+  });
+
+  it('shows the host the invite phrase without the creating browser', async () => {
+    const app = await freshApp();
+    const created = await createRoom(app);
+
+    // A room minted in a shell leaves nothing in any browser, so the host view
+    // is the only place the invite can come back from.
+    const view = await app.inject({
+      method: 'GET',
+      url: `/api/host/${created.hostToken}`,
+    });
+    expect(view.json<{ invite: string | null }>().invite).toBe(
+      created.inviteToken,
+    );
+
+    // Nobody else sees it: the invite is the credential that admits people.
+    const joined = await app.inject({
+      method: 'POST',
+      url: `/api/invites/${created.inviteToken}/join`,
+      headers: { [REQUEST_HEADER]: '1' },
+      payload: { displayName: 'Ada' },
+    });
+    const session =
+      joined.cookies.find((cookie) => cookie.name.startsWith('quorum_session_'))
+        ?.value ?? '';
+    const guest = await app.inject({
+      method: 'GET',
+      url: `/api/rooms/${created.roomId}`,
+      cookies: { [`quorum_session_${created.roomId}`]: session },
+    });
+    expect(guest.json<{ invite: string | null }>().invite).toBeNull();
+  });
+});

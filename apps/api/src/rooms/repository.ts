@@ -10,6 +10,14 @@ export interface RoomRow {
   id: number;
   publicId: string;
   state: RoomState;
+  /**
+   * The invite phrase in the clear, so the host screen can re-share it from any
+   * device. Null for rooms minted before this column existed, and for rooms
+   * whose capabilities have been revoked.
+   */
+  inviteToken: string | null;
+  /** When some device first claimed host controls, if any has. */
+  hostClaimedAt: string | null;
   catalogVersion: string | null;
   slateSeed: string | null;
   eligibleCount: number | null;
@@ -132,6 +140,8 @@ interface RawRoom {
   id: number;
   public_id: string;
   state: RoomState;
+  invite_token: string | null;
+  host_claimed_at: string | null;
   catalog_version: string | null;
   slate_seed: string | null;
   eligible_count: number | null;
@@ -148,6 +158,8 @@ function toRoom(row: RawRoom | undefined): RoomRow | undefined {
     id: row.id,
     publicId: row.public_id,
     state: row.state,
+    inviteToken: row.invite_token,
+    hostClaimedAt: row.host_claimed_at,
     catalogVersion: row.catalog_version,
     slateSeed: row.slate_seed,
     eligibleCount: row.eligible_count,
@@ -159,8 +171,9 @@ function toRoom(row: RawRoom | undefined): RoomRow | undefined {
   };
 }
 
-const roomColumns = `id, public_id, state, catalog_version, slate_seed,
-  eligible_count, closed_early, created_at, started_at, completed_at, expires_at`;
+const roomColumns = `id, public_id, state, invite_token, host_claimed_at,
+  catalog_version, slate_seed, eligible_count, closed_early, created_at,
+  started_at, completed_at, expires_at`;
 
 /**
  * Idempotently load a fixture catalog snapshot. The fixture carries no vote
@@ -282,6 +295,7 @@ export function catalogVersion(database: QuorumDatabase): string | null {
 
 export interface InsertRoomInput {
   publicId: string;
+  inviteToken: string;
   inviteTokenHash: string;
   hostTokenHash: string;
   createdAt: string;
@@ -294,11 +308,13 @@ export function insertRoom(
 ): RoomRow {
   const result = database
     .prepare(
-      `INSERT INTO rooms (public_id, state, invite_token_hash, host_token_hash, created_at, expires_at)
-       VALUES (?, 'LOBBY', ?, ?, ?, ?)`,
+      `INSERT INTO rooms (public_id, state, invite_token, invite_token_hash,
+         host_token_hash, created_at, expires_at)
+       VALUES (?, 'LOBBY', ?, ?, ?, ?, ?)`,
     )
     .run(
       input.publicId,
+      input.inviteToken,
       input.inviteTokenHash,
       input.hostTokenHash,
       input.createdAt,
@@ -353,6 +369,35 @@ export function findRoomByHostHash(
   );
 }
 
+export function findRoomByHostClaimHash(
+  database: QuorumDatabase,
+  hash: string,
+): RoomRow | undefined {
+  return toRoom(
+    database
+      .prepare(`SELECT ${roomColumns} FROM rooms WHERE host_claim_hash = ?`)
+      .get(hash) as RawRoom | undefined,
+  );
+}
+
+/**
+ * Record the device now holding host controls. A later claim overwrites the
+ * previous one, which retires the earlier device's host session while leaving
+ * the host capability itself untouched.
+ */
+export function claimHost(
+  database: QuorumDatabase,
+  roomId: number,
+  claimHash: string,
+  now: string,
+): void {
+  database
+    .prepare(
+      'UPDATE rooms SET host_claim_hash = ?, host_claimed_at = ? WHERE id = ?',
+    )
+    .run(claimHash, now, roomId);
+}
+
 export function markRoomExpired(
   database: QuorumDatabase,
   roomId: number,
@@ -360,7 +405,8 @@ export function markRoomExpired(
   database
     .prepare(
       `UPDATE rooms SET state = 'EXPIRED', invite_token_hash = 'revoked:' || public_id,
-       host_token_hash = 'revoked-host:' || public_id WHERE id = ?`,
+       host_token_hash = 'revoked-host:' || public_id, invite_token = NULL,
+       host_claim_hash = NULL WHERE id = ?`,
     )
     .run(roomId);
 }

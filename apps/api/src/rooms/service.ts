@@ -269,6 +269,7 @@ export class RoomService {
     const hostToken = issueCapability();
     const room = repository.insertRoom(this.database, {
       publicId: issuePublicId(),
+      inviteToken,
       inviteTokenHash: hashCapability(this.secret, inviteToken),
       hostTokenHash: hashCapability(this.secret, hostToken),
       createdAt: this.nowIso(),
@@ -317,15 +318,73 @@ export class RoomService {
     );
   }
 
+  roomByHostClaim(claimToken: string): RoomRow {
+    return this.liveRoom(
+      repository.findRoomByHostClaimHash(
+        this.database,
+        hashCapability(this.secret, claimToken),
+      ),
+    );
+  }
+
+  /**
+   * Whether this host session still holds the room. A superseded session is an
+   * ordinary outcome — another device claimed the room — so it answers false
+   * rather than raising the not-found every other capability miss raises.
+   */
+  holdsHostClaim(roomPublicId: string, claimToken: string): boolean {
+    const room = repository.findRoomByHostClaimHash(
+      this.database,
+      hashCapability(this.secret, claimToken),
+    );
+    return room?.publicId === roomPublicId && room.state !== 'EXPIRED';
+  }
+
+  /**
+   * Hand host controls to the device presenting the host capability.
+   *
+   * The host link is a bearer capability minted wherever the room was — often
+   * a shell on the server, with no browser behind it — so the first device to
+   * open the host screen is the one that becomes the host. It is issued a
+   * room-scoped host session, which lets its host controls survive a link that
+   * gets truncated in a chat app.
+   *
+   * A later device presenting the same capability takes the claim over rather
+   * than being refused: the capability remains the authority, and an operator
+   * who reopens the link on another phone must not lock themself out. The
+   * takeover is audited, so a claim moving unexpectedly is at least visible.
+   */
+  claimHost(hostToken: string): { room: RoomRow; claimToken: string } {
+    const room = this.roomByHostCapability(hostToken);
+    const claimToken = issueCapability();
+    const reclaim = room.hostClaimedAt !== null;
+    repository.claimHost(
+      this.database,
+      room.id,
+      hashCapability(this.secret, claimToken),
+      this.nowIso(),
+    );
+    repository.recordAudit(
+      this.database,
+      room.id,
+      reclaim ? 'host.reclaimed' : 'host.claimed',
+      null,
+      this.nowIso(),
+    );
+    return { room: this.roomByHostCapability(hostToken), claimToken };
+  }
+
   /**
    * Resolve the caller for a room. A session cookie authorises only its own
    * participant in its own room; the host capability authorises host actions
-   * only for the room it was issued for.
+   * only for the room it was issued for, as does the host session a device
+   * holds once it has claimed the room.
    */
   resolveCaller(
     roomPublicId: string,
     sessionToken: string | undefined,
     hostToken: string | undefined,
+    hostClaim?: string,
   ): { room: RoomRow; caller: Caller } {
     const room = this.liveRoom(
       repository.findRoomByPublicId(this.database, roomPublicId),
@@ -346,6 +405,13 @@ export class RoomService {
       );
       isHost = hostRoom?.id === room.id;
     }
+    if (!isHost && hostClaim !== undefined) {
+      const claimedRoom = repository.findRoomByHostClaimHash(
+        this.database,
+        hashCapability(this.secret, hostClaim),
+      );
+      isHost = claimedRoom?.id === room.id;
+    }
     if (participant === undefined && !isHost) throw notFound();
     if (participant !== undefined) {
       repository.touchParticipant(this.database, participant.id, this.nowIso());
@@ -353,11 +419,21 @@ export class RoomService {
     return { room, caller: { participant, isHost } };
   }
 
-  requireHost(roomPublicId: string, hostToken: string | undefined): RoomRow {
-    if (hostToken === undefined) throw notFound();
-    const room = this.roomByHostCapability(hostToken);
-    if (room.publicId !== roomPublicId) throw notFound();
-    return room;
+  requireHost(
+    roomPublicId: string,
+    hostToken: string | undefined,
+    hostClaim?: string,
+  ): RoomRow {
+    // The capability first: a host session is only ever a stand-in for it.
+    if (hostToken !== undefined) {
+      const room = this.roomByHostCapability(hostToken);
+      if (room.publicId === roomPublicId) return room;
+    }
+    if (hostClaim !== undefined) {
+      const room = this.roomByHostClaim(hostClaim);
+      if (room.publicId === roomPublicId) return room;
+    }
+    throw notFound();
   }
 
   join(inviteToken: string, displayName: string, asHost: boolean): JoinedRoom {
@@ -413,8 +489,12 @@ export class RoomService {
   }
 
   /** Open round 1: 20 drawn at random from the slate candidate pool. */
-  start(roomPublicId: string, hostToken: string | undefined): RoomRow {
-    const room = this.requireHost(roomPublicId, hostToken);
+  start(
+    roomPublicId: string,
+    hostToken: string | undefined,
+    hostClaim?: string,
+  ): RoomRow {
+    const room = this.requireHost(roomPublicId, hostToken, hostClaim);
     if (room.state !== 'LOBBY') throw conflict('Room has already started');
     const eligibleCount = repository.countParticipants(this.database, room.id);
     if (eligibleCount < 1) {
@@ -463,8 +543,12 @@ export class RoomService {
    * percentages have their own honest denominator. Movies already judged in
    * this room are excluded, which the schema also enforces.
    */
-  continueVoting(roomPublicId: string, hostToken: string | undefined): RoomRow {
-    const room = this.requireHost(roomPublicId, hostToken);
+  continueVoting(
+    roomPublicId: string,
+    hostToken: string | undefined,
+    hostClaim?: string,
+  ): RoomRow {
+    const room = this.requireHost(roomPublicId, hostToken, hostClaim);
     if (room.state !== 'COMPLETE') {
       throw conflict('Voting is still open');
     }
@@ -509,8 +593,12 @@ export class RoomService {
     return this.reload(room.id);
   }
 
-  close(roomPublicId: string, hostToken: string | undefined): RoomRow {
-    const room = this.requireHost(roomPublicId, hostToken);
+  close(
+    roomPublicId: string,
+    hostToken: string | undefined,
+    hostClaim?: string,
+  ): RoomRow {
+    const room = this.requireHost(roomPublicId, hostToken, hostClaim);
     if (room.state !== 'VOTING') throw conflict('Room is not voting');
     const round = repository.currentRound(this.database, room.id);
     if (round === undefined) throw conflict('Room has no open round');
@@ -531,8 +619,12 @@ export class RoomService {
     return this.reload(room.id);
   }
 
-  expire(roomPublicId: string, hostToken: string | undefined): void {
-    const room = this.requireHost(roomPublicId, hostToken);
+  expire(
+    roomPublicId: string,
+    hostToken: string | undefined,
+    hostClaim?: string,
+  ): void {
+    const room = this.requireHost(roomPublicId, hostToken, hostClaim);
     repository.markRoomExpired(this.database, room.id);
     repository.recordAudit(
       this.database,
@@ -809,6 +901,9 @@ export class RoomService {
               complete: round.completedAt !== null,
             },
       completedRounds,
+      // Only the host sees the invite phrase, and only while it can still be
+      // used: it is the credential that admits people to the room.
+      invite: caller.isHost && room.state === 'LOBBY' ? room.inviteToken : null,
       canContinue: caller.isHost && this.canContinue(room),
     };
   }
