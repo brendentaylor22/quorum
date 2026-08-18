@@ -2,7 +2,7 @@
  * Application rate limiting.
  *
  * The limits themselves are policy, written down in
- * `docs/phase-0/retention-and-abuse.md`; this file enforces them. Every
+ * `docs/retention-and-abuse.md`; this file enforces them. Every
  * operation carries two rules — a sustained one and a burst one — because a
  * single window cannot express both "five rooms an hour" and "not five rooms in
  * five seconds".
@@ -41,7 +41,7 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 /**
- * The limits from `docs/phase-0/retention-and-abuse.md`. Changing a number here
+ * The limits from `docs/retention-and-abuse.md`. Changing a number here
  * changes the policy, so change the document in the same commit.
  */
 export const POLICIES = {

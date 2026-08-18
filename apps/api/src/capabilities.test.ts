@@ -34,7 +34,7 @@ describe('capabilities', () => {
 
 /**
  * The invite is the one capability held below the 128-bit floor, so its
- * entropy is asserted rather than assumed. See `docs/phase-0/threat-model.md`
+ * entropy is asserted rather than assumed. See `docs/threat-model.md`
  * T01 for why the reduction is bounded to this one token.
  */
 describe('invite phrases', () => {

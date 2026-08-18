@@ -10,7 +10,7 @@
  * yields about twenty binary swipes per person and no history across rooms,
  * which supports a coarse tag preference and rules out collaborative
  * filtering: every member rated the same twenty items, so there is nothing to
- * generalise from. See `docs/phase-4/recommendations.md`.
+ * generalise from. See `docs/recommendations.md`.
  */
 export const RECOMMENDER_VERSION = 'quorum-recommend-v1';
 

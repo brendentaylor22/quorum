@@ -134,7 +134,7 @@ room-scoped by design. There is nothing to generalise from.
 Nothing a room has judged can reappear in a later round — enforced by
 `UNIQUE (room_id, catalog_item_id)`, not merely by the query.
 
-Full write-up: [group recommendations](docs/phase-4/recommendations.md).
+Full write-up: [group recommendations](docs/recommendations.md).
 
 ### Where the catalog comes from
 
@@ -159,7 +159,7 @@ in-flight room and rewrite historical results.
 This is why serving never touches the Internet: slate selection is a local set
 scan, replay needs a frozen candidate pool, and a TMDB outage must not stop a
 room. Details, obligations, and configuration:
-[catalog ingestion](docs/phase-4/catalog-ingestion.md).
+[catalog ingestion](docs/catalog-ingestion.md).
 
 ### Security model
 
@@ -173,7 +173,7 @@ room. Details, obligations, and configuration:
   reduction is bounded to it — an invite confers no host authority, expires
   with a lobby inside 24 hours, and admits at most 20 people. At ~10²³ expected
   guesses no amount of unthrottled HTTP closes that gap within a room's life.
-  Recorded as T01a in the [threat model](docs/phase-0/threat-model.md).
+  Recorded as T01a in the [threat model](docs/threat-model.md).
 - **Split capabilities.** Host control (start, close, expire) travels in a
   header, not a cookie. A stolen participant cookie grants that participant's
   remaining actions in that one room — never host control, never another
@@ -202,8 +202,8 @@ room. Details, obligations, and configuration:
   deletes them — participants, exposures, interactions, and all — 24 hours
   later, whether or not anyone visits.
 
-Threat model: [docs/phase-0/threat-model.md](docs/phase-0/threat-model.md).
-Retention and abuse: [docs/phase-0/retention-and-abuse.md](docs/phase-0/retention-and-abuse.md).
+Threat model: [docs/threat-model.md](docs/threat-model.md).
+Retention and abuse: [docs/retention-and-abuse.md](docs/retention-and-abuse.md).
 
 ### Accessibility
 
@@ -232,7 +232,7 @@ packages/
   database/   SQLite (better-sqlite3), migrations, backup/restore
   tmdb/       TMDB client: rate limiting, schemas, mapping, attribution
 deploy/       Compose topology, Cloudflare tunnel config, secrets layout
-docs/         Product contract, threat model, ADRs, phase evidence
+docs/         Self-hosting, operations, contracts, threat model, ADRs
 fixtures/     60-movie fallback catalog
 ```
 
@@ -347,7 +347,7 @@ docker compose run --rm app node apps/api/dist/cli.js catalog-status
 
 A first import of ~13,000 movies takes 10–15 minutes at a deliberately polite
 ~20 req/s. Tuning variables are in
-[catalog ingestion](docs/phase-4/catalog-ingestion.md#configuration).
+[catalog ingestion](docs/catalog-ingestion.md#configuration).
 
 ### Operational commands
 
@@ -389,33 +389,29 @@ Two things are worth doing beyond the quickstart, and both are optional:
   you verify the download. It contains nothing this repository does not, so a
   host that would rather clone can clone.
 
-Procedures: [release runbook](docs/phase-1/release-runbook.md),
-[operator runbook](docs/phase-1/operator-runbook.md),
-[rollback runbook](docs/phase-1/rollback-runbook.md).
+Procedures: [releasing](docs/releasing.md) · [operations](docs/operations.md),
+which covers the strict deployment, backup and restore, upgrade, and rollback.
 
 ---
 
 ## Project status
 
-| Phase                                  | State                                                                                                          |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 0 — Product contract and threat model  | Complete                                                                                                       |
-| 1 — Secure foundation and CI image     | Code and local evidence complete; fresh-host, GHCR, and ingress evidence pending real infrastructure           |
-| 2 — Local browser-testable MVP         | Complete                                                                                                       |
-| 3 — Abuse resistance and web hardening | Complete — rate limits, security headers and CSP, log redaction, scheduled retention, and the OSS release work |
-| 4 — Movie data and private pilot       | Code complete; the pilot on real phones over a real hostname is not done                                       |
-| 5 — MVP release hardening              | Next: load test, backup encryption and restore drill, rollback drill, operational view, accessibility          |
+Playable end to end and installable. Rooms, private voting, ranked results,
+multi-round recommendations, a real TMDB catalog, rate limits, security headers,
+log redaction, and scheduled retention are all built, tested, and running in the
+container.
 
 Known gaps, stated plainly:
 
 - **Nothing here has been proved on real infrastructure yet.** Everything is
-  tested locally and in CI; the Phase 1 exit gate and the Phase 4 pilot both
-  need a real host, and neither has had one.
+  tested locally and in CI. A pilot on real phones over a real hostname — and
+  the fresh-host, GHCR, and ingress checks that go with it — has not happened.
 - No load test has been run, so the "20 participants, 20 concurrent rooms"
   support target is a design intent rather than a measurement.
 - Backups are unencrypted and local; no restore drill has been performed on a
   real deployment.
-
+- No accessibility audit or mobile-browser matrix has been run against the
+  shipped build.
 - The recommender's blend is a reasoned default, not a measured winner — offline
   replay evaluation is not built.
 - Nothing tracks fairness across rounds; the same member could be outvoted
@@ -423,35 +419,39 @@ Known gaps, stated plainly:
 - Movies only. No series.
 - Whether tag-counting over TMDB genres and keywords falls inside TMDB's
   ML/AI restriction is an open question with a documented fallback. See
-  [the open question](docs/phase-4/recommendations.md#open-question-tmdbs-mlai-restriction).
+  [the open question](docs/recommendations.md#open-question-tmdbs-mlai-restriction).
   This repository records engineering interpretation, not legal advice.
 
 ---
 
 ## Documentation map
 
-**Product and design**
+**Run it**
 
-- [Product contract](docs/phase-0/product-contract.md) — normative invariants
-- [Wireframes](docs/phase-0/wireframes.md)
-- [Threat model](docs/phase-0/threat-model.md)
-- [Retention and abuse policy](docs/phase-0/retention-and-abuse.md)
-- [TMDB use review](docs/phase-0/tmdb-use-review.md)
+- [Self-hosting](docs/self-hosting.md) — the install, all three ingress shapes, and every configuration variable
+- [Operations](docs/operations.md) — strict deployment, backup and restore, upgrade, rollback
+- [Releasing](docs/releasing.md) — what a push to `main` produces
+- [Dependency policy](docs/dependency-policy.md) — updates and vulnerability response
+
+**How it is built**
+
+- [HTTP surface](docs/http-api.md) — every route and what it takes to reach it
+- [Catalog ingestion](docs/catalog-ingestion.md) — the TMDB importer and its obligations
+- [Group recommendations](docs/recommendations.md) — how round 2 chooses
 - [Architecture decisions](docs/adr/)
 
-**Build and operate**
+**Product and security contracts**
 
-- [Phase 1 evidence](docs/phase-1/README.md) · [operator](docs/phase-1/operator-runbook.md) · [release](docs/phase-1/release-runbook.md) · [rollback](docs/phase-1/rollback-runbook.md)
-- [Dependency security policy](docs/phase-1/dependency-security-policy.md)
-- [Self-hosting guide](docs/self-hosting.md) — the install, all three ingress shapes, and every configuration variable
-- [Phase 2 evidence](docs/phase-2/README.md) · [Phase 3 evidence](docs/phase-3/README.md)
-- [Catalog ingestion](docs/phase-4/catalog-ingestion.md) · [group recommendations](docs/phase-4/recommendations.md)
+- [Product contract](docs/product-contract.md) — normative invariants
+- [Threat model](docs/threat-model.md)
+- [Retention and abuse policy](docs/retention-and-abuse.md)
+- [TMDB use review](docs/tmdb-use-review.md)
+- [Wireframes](docs/wireframes.md) — the original design sketches
 
 **Executable specification**
 
 - [Ranking examples](tests/contracts/ranking.examples.json)
-- [User-journey acceptance tests](tests/acceptance/phase-0.feature)
-- [Implementation plan](QUORUM_IMPLEMENTATION_PLAN.md)
+- [User-journey acceptance tests](tests/acceptance/user-journeys.feature)
 
 ---
 

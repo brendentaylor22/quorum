@@ -1,7 +1,5 @@
-# Phase 0 landed before automated formatting. Preserve its reviewed text byte-for-byte.
-QUORUM_IMPLEMENTATION_PLAN.md
+# Reviewed text that predates automated formatting. Preserve it byte-for-byte.
 docs/adr/
-docs/phase-0/
 fixtures/
 tests/acceptance/
 tests/contracts/

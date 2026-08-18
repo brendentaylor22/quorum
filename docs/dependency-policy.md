@@ -1,4 +1,6 @@
-# Dependency update and vulnerability response policy
+# Dependency and vulnerability policy
+
+How updates land and how findings are handled. Enforced by CI, not by habit.
 
 ## Updates
 
@@ -15,4 +17,4 @@
 4. Moderate/low findings enter tracked backlog with severity and exposure review.
 5. Suspected credential exposure requires revocation and rotation; deleting secret from latest commit is insufficient.
 
-Private pilot cannot proceed when critical/high image findings lack resolved scan or unexpired written acceptance.
+No release ships while a critical or high image finding lacks either a resolved scan or an unexpired written acceptance.

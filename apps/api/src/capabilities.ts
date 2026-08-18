@@ -96,7 +96,7 @@ export const INVITE_PHRASE_WORDS = 6;
  * authority, and the host token it is issued beside is untouched. At ~77.5
  * bits an attacker averages ~10^23 guesses, which no amount of unthrottled
  * HTTP closes within a room's lifetime. It is still worth far less margin than
- * the rest of the system carries, which is why `docs/phase-0/threat-model.md`
+ * the rest of the system carries, which is why `docs/threat-model.md`
  * now records the invite floor separately from the others.
  *
  * `randomInt` rather than a modulo of random bytes: 2^n is not divisible by
