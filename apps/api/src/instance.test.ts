@@ -36,6 +36,29 @@ describe('instanceInfo', () => {
   it('ignores an empty setting rather than offering an empty link', () => {
     expect(instanceInfo({ QUORUM_SOURCE_URL: '   ' }).modified).toBe(false);
   });
+
+  it('leaves room creation public unless an operator closes it', () => {
+    expect(instanceInfo({}).roomCreation).toBe('public');
+    expect(instanceInfo({ QUORUM_ROOM_CREATION: '' }).roomCreation).toBe(
+      'public',
+    );
+  });
+
+  it('closes room creation when the operator asks', () => {
+    expect(
+      instanceInfo({ QUORUM_ROOM_CREATION: 'operator' }).roomCreation,
+    ).toBe('operator');
+    expect(
+      instanceInfo({ QUORUM_ROOM_CREATION: ' OPERATOR ' }).roomCreation,
+    ).toBe('operator');
+  });
+
+  it('reads an unrecognised value as closed, never as open', () => {
+    // A typo in the one setting that restricts access must not fail open.
+    expect(
+      instanceInfo({ QUORUM_ROOM_CREATION: 'opreator' }).roomCreation,
+    ).toBe('operator');
+  });
 });
 
 describe('GET /api/instance', () => {

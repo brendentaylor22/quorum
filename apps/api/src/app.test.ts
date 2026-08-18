@@ -2,17 +2,20 @@ import {
   HOST_TOKEN_HEADER,
   REQUEST_HEADER,
   type CreateRoomResponse,
+  type ErrorResponse,
+  type InstanceInfo,
 } from '@quorum/contracts';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from './app.js';
 
 const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(apps.splice(0).map(async (app) => app.close()));
 });
 
@@ -105,5 +108,69 @@ describe('request logging', () => {
     expect(log).not.toContain(hostToken);
     // The route shape still survives, or the log would be useless.
     expect(log).toContain('/api/host/[redacted]');
+  });
+});
+
+describe('operator-only room creation', () => {
+  it('refuses the public endpoint and still honours an invite', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-closed-'));
+    const app = await buildApp({
+      databasePath: join(directory, 'quorum.db'),
+      staticDirectory: join(directory, 'missing'),
+    });
+    apps.push(app);
+
+    // Minted before the gate closes, standing in for the CLI's `create-room`:
+    // it is the same service call, reached from the shell instead of the wire.
+    const created = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        headers: { [REQUEST_HEADER]: '1' },
+      })
+    ).json<CreateRoomResponse>();
+
+    vi.stubEnv('QUORUM_ROOM_CREATION', 'operator');
+
+    const refused = await app.inject({
+      method: 'POST',
+      url: '/api/rooms',
+      headers: { [REQUEST_HEADER]: '1' },
+    });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json<ErrorResponse>().error).toBe('room_creation_disabled');
+
+    // The mode is policy, not a secret, so the client can render a notice
+    // rather than a button that fails.
+    const instance = await app.inject({ method: 'GET', url: '/api/instance' });
+    expect(instance.json<InstanceInfo>().roomCreation).toBe('operator');
+
+    // Closing creation must not close the room already minted: the invite is
+    // what friends were sent, and the host link is what the operator holds.
+    const joined = await app.inject({
+      method: 'POST',
+      url: `/api/invites/${created.inviteToken}/join`,
+      headers: { [REQUEST_HEADER]: '1' },
+      payload: { displayName: 'Ada' },
+    });
+    expect(joined.statusCode).toBe(201);
+
+    const host = await app.inject({
+      method: 'POST',
+      url: `/api/host/${created.hostToken}/join`,
+      headers: { [REQUEST_HEADER]: '1' },
+      payload: { displayName: 'Grace' },
+    });
+    expect(host.statusCode).toBe(201);
+
+    // Only once: the first caller to open the host link is the host, and a
+    // second one is refused rather than quietly made a second host.
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/host/${created.hostToken}/join`,
+      headers: { [REQUEST_HEADER]: '1' },
+      payload: { displayName: 'Imposter' },
+    });
+    expect(second.statusCode).toBe(409);
   });
 });

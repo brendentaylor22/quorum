@@ -13,7 +13,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { secureCookies } from './capabilities.js';
-import { instanceInfo } from './instance.js';
+import { instanceInfo, roomCreationMode } from './instance.js';
 import { POLICIES, RateLimiter, type RateLimitPolicy } from './rate-limit.js';
 import { ApiError, notFound, RoomService } from './rooms/service.js';
 
@@ -202,6 +202,17 @@ export function registerRoomRoutes(
 
   app.post('/api/rooms', (request, reply) => {
     requireSameOrigin(request);
+    // Checked before the rate limiter spends a slot: on a closed instance this
+    // endpoint is not a scarce resource being protected, it is not a resource
+    // at all, and a bot hammering it should not be able to exhaust the bucket
+    // that the operator's own CLI-minted rooms are unaffected by anyway.
+    if (roomCreationMode() === 'operator') {
+      throw new ApiError(
+        403,
+        'room_creation_disabled',
+        'This instance creates rooms by invitation only',
+      );
+    }
     spend(request, POLICIES.createRoom);
     const created = service.createRoom();
     const body: CreateRoomResponse = createRoomResponseSchema.parse({

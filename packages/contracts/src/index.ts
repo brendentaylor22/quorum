@@ -247,6 +247,10 @@ export const catalogSourceSchema = z.object({
 });
 export type CatalogSource = z.infer<typeof catalogSourceSchema>;
 
+/** Who is allowed to create a room on this instance. */
+export const roomCreationModeSchema = z.enum(['public', 'operator']);
+export type RoomCreationMode = z.infer<typeof roomCreationModeSchema>;
+
 /**
  * What this instance is, for the two things every deployment owes the people
  * using it: a way to reach the source, and a way to read the privacy notice.
@@ -261,6 +265,17 @@ export const instanceInfoSchema = z.object({
   licence: z.string(),
   /** Set by an operator who has modified Quorum, purely so the UI can say so. */
   modified: z.boolean(),
+  /**
+   * Who may create a room. `public` is the shipped default: anyone who loads
+   * the page can start one. `operator` closes the endpoint and leaves room
+   * creation to the CLI, for a deployment on a public hostname whose only
+   * intended hosts are the people with shell access.
+   *
+   * Published here so the client can say "by invitation only" instead of
+   * rendering a button that answers 403. It describes policy, not a secret:
+   * anyone can learn the same thing by pressing the button.
+   */
+  roomCreation: roomCreationModeSchema,
 });
 export type InstanceInfo = z.infer<typeof instanceInfoSchema>;
 
@@ -274,6 +289,10 @@ export const errorCodeSchema = z.enum([
   'conflict',
   'too_many_participants',
   'rate_limited',
+  // Distinct from `not_found` on purpose: this one hides nothing. The mode is
+  // already published on `/api/instance`, and a caller who cannot tell "closed"
+  // from "broken" retries forever.
+  'room_creation_disabled',
 ]);
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 

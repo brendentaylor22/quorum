@@ -28,6 +28,12 @@ services:
       # deployment behind an unusually large shared address.
       QUORUM_RATE_LIMIT_SCALE: ${QUORUM_RATE_LIMIT_SCALE:-1}
       QUORUM_RETENTION_SWEEP_MINUTES: ${QUORUM_RETENTION_SWEEP_MINUTES:-15}
+      # `operator` closes POST /api/rooms and leaves `create-room` on the CLI as
+      # the only way to start a room. Default is the shipped `public`.
+      QUORUM_ROOM_CREATION: ${QUORUM_ROOM_CREATION:-public}
+      # Read only by `create-room`, to print whole links rather than paths.
+      # Nothing at request time builds a link from it.
+      QUORUM_PUBLIC_URL: ${QUORUM_PUBLIC_URL:-}
     secrets:
       - quorum_token_secret
     volumes:

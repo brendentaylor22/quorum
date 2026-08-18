@@ -1,10 +1,39 @@
+import type { RoomCreationMode } from '@quorum/contracts';
 import { useState } from 'react';
 import { api } from '../api.js';
 import { rememberInvite } from '../hooks.js';
 
-export function CreateScreen() {
+/**
+ * What a visitor sees on an instance that mints its rooms from the shell.
+ *
+ * A disabled button with a 403 behind it reads as breakage; this reads as
+ * policy. It reveals nothing — `/api/instance` already publishes the mode —
+ * and it points the one visitor who matters, somebody holding an invite, at
+ * the link they already have.
+ */
+function InvitationOnly() {
+  return (
+    <section aria-labelledby="create-heading">
+      <h2 id="create-heading">By invitation only</h2>
+      <p className="lede">
+        This instance creates rooms by invitation. Ask whoever is hosting for
+        their link — it opens straight into the room, with no account and no
+        email.
+      </p>
+    </section>
+  );
+}
+
+export function CreateScreen({
+  roomCreation,
+}: {
+  /** `null` while `/api/instance` is still in flight. */
+  roomCreation: RoomCreationMode | null;
+}) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  if (roomCreation === 'operator') return <InvitationOnly />;
 
   return (
     <section aria-labelledby="create-heading">
@@ -20,7 +49,10 @@ export function CreateScreen() {
       </ol>
       <button
         type="button"
-        disabled={busy}
+        // Also disabled until the mode is known, so a visitor to a closed
+        // instance cannot press it during the instant before the notice
+        // replaces it and collect a 403 for their trouble.
+        disabled={busy || roomCreation === null}
         onClick={() => {
           setBusy(true);
           setNotice(null);

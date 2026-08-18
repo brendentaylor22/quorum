@@ -10,7 +10,7 @@ token_secret_file="$project_dir/deploy/secrets/token-secret"
 runtime_uid=10001
 
 usage() {
-  printf '%s\n' 'Usage: quorumctl start [--tunnel|--proxy|--existing-ingress] | stop | status | doctor | migrate | purge [--room <roomId>] | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
+  printf '%s\n' 'Usage: quorumctl start [--tunnel|--proxy|--existing-ingress] | session [--tunnel|--proxy|--existing-ingress] | stop | status | doctor | migrate | purge [--room <roomId>] | backup <name.db> | restore <backup.db> <new-volume> | logs | rollback <image@sha256:digest>' >&2
   exit 2
 }
 
@@ -84,36 +84,106 @@ require_proxy_settings() {
   fi
 }
 
+env_value() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$env_file" | sed -n '1p'
+}
+
+# One field out of the CLI's single-line JSON. The values printed by
+# `create-room` are tokens, ids, and timestamps — no quotes, no escapes — so a
+# sed extraction is honest here and saves making jq a deployment dependency.
+json_field() {
+  sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"
+}
+
+start_stack() {
+  require_env
+  require_token_secret
+  case "${1:-}" in
+    --tunnel) compose --profile tunnel up --detach ;;
+    --proxy)
+      require_proxy_settings
+      compose --profile proxy up --detach
+      ;;
+    # For a host that already terminates TLS for something else: a reverse
+    # proxy, or a tunnel with other hostnames on it. Quorum starts with no
+    # ingress of its own and no published port; the existing proxy joins the
+    # quorum-edge network and forwards to http://quorum:3000.
+    --existing-ingress)
+      compose up --detach app
+      printf '%s\n' 'Started for an ingress you already run.' >&2
+      printf '%s\n' 'Attach that proxy to the quorum-edge network and forward to http://quorum:3000.' >&2
+      printf '%s\n' 'Set QUORUM_TRUST_PROXY in deploy/.env, or every caller shares one rate-limit bucket.' >&2
+      ;;
+    '')
+      # No ingress at all: the app runs on an internal network with no
+      # published port, so nothing outside Docker can reach it. Useful for
+      # migrate, doctor, and catalog work; not a way to serve anyone.
+      compose up --detach app
+      printf '%s\n' 'Started without ingress. Nothing can reach this instance; use --tunnel, --proxy, or --existing-ingress to serve it.' >&2
+      ;;
+    *) usage ;;
+  esac
+}
+
+# Compose reports the container healthy only once the readiness probe passes,
+# which is the first moment a room minted here is actually reachable. Printing
+# a link before that hands the operator something that 502s.
+wait_for_health() {
+  container=$(compose ps --quiet app)
+  if [ -z "${container:-}" ]; then
+    printf '%s\n' 'Application container is not running.' >&2
+    exit 1
+  fi
+  attempt=0
+  while [ "$attempt" -lt 60 ]; do
+    state=$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null || printf 'unknown')
+    case "$state" in
+      healthy) return 0 ;;
+      unhealthy)
+        printf '%s\n' 'Application reported unhealthy; check quorumctl logs.' >&2
+        exit 1
+        ;;
+    esac
+    attempt=$((attempt + 1))
+    sleep 2
+  done
+  printf '%s\n' 'Timed out waiting for the application to become healthy.' >&2
+  exit 1
+}
+
 command=${1:-}
 case "$command" in
   start)
-    require_env
-    require_token_secret
-    case "${2:-}" in
-      --tunnel) compose --profile tunnel up --detach ;;
-      --proxy)
-        require_proxy_settings
-        compose --profile proxy up --detach
-        ;;
-      # For a host that already terminates TLS for something else: a reverse
-      # proxy, or a tunnel with other hostnames on it. Quorum starts with no
-      # ingress of its own and no published port; the existing proxy joins the
-      # quorum-edge network and forwards to http://quorum:3000.
-      --existing-ingress)
-        compose up --detach app
-        printf '%s\n' 'Started for an ingress you already run.' >&2
-        printf '%s\n' 'Attach that proxy to the quorum-edge network and forward to http://quorum:3000.' >&2
-        printf '%s\n' 'Set QUORUM_TRUST_PROXY in deploy/.env, or every caller shares one rate-limit bucket.' >&2
-        ;;
-      '')
-        # No ingress at all: the app runs on an internal network with no
-        # published port, so nothing outside Docker can reach it. Useful for
-        # migrate, doctor, and catalog work; not a way to serve anyone.
-        compose up --detach app
-        printf '%s\n' 'Started without ingress. Nothing can reach this instance; use --tunnel, --proxy, or --existing-ingress to serve it.' >&2
-        ;;
-      *) usage ;;
-    esac
+    start_stack "${2:-}"
+    ;;
+  # Start the stack and mint one room, which is the whole evening's worth of
+  # operating on an instance with QUORUM_ROOM_CREATION=operator: the host link
+  # is printed here and nowhere else, and the invite phrase is what gets read
+  # aloud. Stop it afterwards with `quorumctl stop`.
+  session)
+    start_stack "${2:-}"
+    wait_for_health
+    base_url=$(env_value QUORUM_PUBLIC_URL)
+    if [ -z "${base_url:-}" ]; then
+      hostname=$(env_value QUORUM_PUBLIC_HOSTNAME)
+      [ -z "${hostname:-}" ] || base_url="https://$hostname"
+    fi
+    room=$(compose exec --no-TTY app node apps/api/dist/cli.js create-room "${base_url:-}")
+    host_link=$(printf '%s' "$room" | json_field hostUrl)
+    invite_link=$(printf '%s' "$room" | json_field inviteUrl)
+    [ -n "${host_link:-}" ] || host_link=$(printf '%s' "$room" | json_field hostPath)
+    [ -n "${invite_link:-}" ] || invite_link=$(printf '%s' "$room" | json_field invitePath)
+    printf '\n'
+    printf 'room     %s\n' "$(printf '%s' "$room" | json_field roomId)"
+    printf 'host     %s\n' "$host_link"
+    printf 'invite   %s\n' "$invite_link"
+    printf 'phrase   %s\n' "$(printf '%s' "$room" | json_field inviteToken)"
+    printf 'expires  %s\n' "$(printf '%s' "$room" | json_field expiresAt)"
+    printf '\n'
+    printf '%s\n' 'Open the host link first: whoever opens it becomes the host, and only once.' >&2
+    if [ -z "${base_url:-}" ]; then
+      printf '%s\n' 'Set QUORUM_PUBLIC_URL in deploy/.env to print full links instead of paths.' >&2
+    fi
     ;;
   stop)
     require_env

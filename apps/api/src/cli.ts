@@ -29,8 +29,56 @@ function usage(): never {
   throw new Error(
     'Usage: quorumctl migrate | import-catalog | catalog-refresh | catalog-status' +
       ' | doctor [db] | backup <new-path> | restore <backup> <new-db-path>' +
-      ' | purge [--room <roomId>]',
+      ' | purge [--room <roomId>] | create-room [baseUrl]',
   );
+}
+
+/**
+ * Mint a room from the shell, printing the host link and the invite phrase.
+ *
+ * This is the other half of `QUORUM_ROOM_CREATION=operator`: with the HTTP
+ * endpoint closed, an operator needs some way to start the evening, and shell
+ * access is the credential. Nothing here is privileged that the endpoint was
+ * not — it is the same `createRoom` — but reaching it requires the host rather
+ * than a browser, which is exactly the property that keeps strangers and
+ * crawlers from filling the database with rooms nobody asked for.
+ *
+ * The host token is printed once and never again: only its hash is stored, so
+ * a lost link means minting a new room, not recovering this one.
+ */
+function createRoom(path: string, baseUrl: string | undefined) {
+  const database = openDatabase(path);
+  try {
+    migrate(database, migrationsDirectory);
+    const service = new RoomService({
+      database,
+      secret: resolveTokenSecret(path),
+    });
+    const created = service.createRoom();
+    const hostPath = `/host/${created.hostToken}`;
+    const invitePath = `/join/${created.inviteToken}`;
+    // Paths are always correct; absolute links need a public origin the server
+    // cannot know, so they appear only when the operator supplies one.
+    const origin = (baseUrl ?? process.env.QUORUM_PUBLIC_URL ?? '').replace(
+      /\/+$/,
+      '',
+    );
+    return {
+      roomId: created.roomId,
+      expiresAt: created.expiresAt,
+      hostPath,
+      invitePath,
+      inviteToken: created.inviteToken,
+      ...(origin === ''
+        ? {}
+        : {
+            hostUrl: `${origin}${hostPath}`,
+            inviteUrl: `${origin}${invitePath}`,
+          }),
+    };
+  } finally {
+    database.close();
+  }
 }
 
 /**
@@ -188,6 +236,9 @@ async function main(): Promise<void> {
       if ('deleted' in report && !report.deleted) process.exitCode = 1;
       break;
     }
+    case 'create-room':
+      console.log(JSON.stringify(createRoom(path, first)));
+      break;
     case 'backup':
       if (first === undefined) usage();
       console.log(JSON.stringify(await backupDatabase(path, first)));
