@@ -5,6 +5,16 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 7 ships a new compiler API that typescript-eslint does not
+      # support: `eslint .` aborts with "typescript-eslint does not support TS
+      # 7.0" before it lints a single file, so a bump here breaks the lint gate
+      # outright rather than degrading it. Support is tracked in
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940.
+      # Drop this entry once typescript-eslint declares a peer range covering
+      # TS >=7, then take the major deliberately.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:

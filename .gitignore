@@ -27,3 +27,4 @@ deploy/cloudflared/config.yml
 # Deployment notes specific to one operator: hostnames, co-tenant services,
 # and network layout that should not ship with the public project.
 docs/local/
+docs/vm-runbook.md

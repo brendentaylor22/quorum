@@ -813,3 +813,21 @@ main.in-room {
   /* Long source URLs must not push a phone into horizontal scroll. */
   overflow-wrap: anywhere;
 }
+
+/*
+ * TMDB's logo, on the privacy page's credits section. The only styling allowed
+ * is a proportional size cap: recolouring, cropping, or filtering it would
+ * breach the terms it is used under. It is capped well under the page heading
+ * so Quorum's own branding stays the more prominent of the two.
+ */
+.provider-logo {
+  display: inline-block;
+  margin: 0 0 0.9rem;
+  max-width: 11rem;
+}
+
+.provider-logo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
