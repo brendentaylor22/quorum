@@ -139,7 +139,7 @@ Full write-up: [group recommendations](docs/phase-4/recommendations.md).
 ### Where the catalog comes from
 
 Movie metadata is a **local snapshot**, imported by an operator-triggered job,
-never fetched during a request. A fresh checkout falls back to a 20-movie
+never fetched during a request. A fresh checkout falls back to a 60-movie
 fixture so it is playable with no credentials.
 
 The importer sweeps TMDB `/discover/movie` one release year at a time (an
@@ -233,7 +233,7 @@ packages/
   tmdb/       TMDB client: rate limiting, schemas, mapping, attribution
 deploy/       Compose topology, Cloudflare tunnel config, secrets layout
 docs/         Product contract, threat model, ADRs, phase evidence
-fixtures/     20-movie fallback catalog
+fixtures/     60-movie fallback catalog
 ```
 
 Two rules keep the shape honest:
@@ -252,14 +252,45 @@ of rooms of ≤20 people making 20 decisions each. Rounds, slates, exposures, an
 interactions are separate tables so a vote is an append, not an update, and a
 round's frozen denominator is stored rather than recomputed.
 
-**Ingress** is a Cloudflare tunnel ([ADR 0003](docs/adr/0003-cloudflare-tunnel.md)),
-so the VM opens no inbound port.
+**Ingress** is pluggable, and the serving container publishes no port under any
+of the shapes. A Cloudflare tunnel ([ADR 0003](docs/adr/0003-cloudflare-tunnel.md))
+is the default recommendation, because it opens no inbound port at all.
 
 ---
 
 ## Running it
 
-Requires Node.js 24 (and Docker with Compose for the container path).
+### In Docker
+
+Docker with the Compose plugin. Nothing is built locally — Compose pulls the
+published image.
+
+```sh
+git clone https://github.com/brendentaylor22/quorum.git
+cd quorum/deploy
+
+cp .env.example .env                            # works as shipped
+openssl rand -hex 32 > secrets/token-secret     # keys every capability hash
+chmod 0400 secrets/token-secret
+
+docker compose up -d
+```
+
+`.env.example` documents every setting where you will be editing it; the
+defaults are all workable, and the 60-movie fixture catalog means it is playable
+with no TMDB credential.
+
+One thing the quickstart deliberately cannot do for you: **nothing can reach the
+instance yet.** The app publishes no port and sits on an `internal: true`
+network, so an ingress has to bridge the gap. Three shapes are supported — your
+own existing reverse proxy, the bundled Caddy (`--profile proxy`), or a
+Cloudflare tunnel (`--profile tunnel`) — and all three keep that property.
+[docs/self-hosting.md](docs/self-hosting.md) covers each in full, along with
+`QUORUM_TRUST_PROXY`, backups, and the configuration reference.
+
+### From source
+
+Requires Node.js 24.
 
 ```sh
 npm ci
@@ -318,32 +349,45 @@ A first import of ~13,000 movies takes 10–15 minutes at a deliberately polite
 ~20 req/s. Tuning variables are in
 [catalog ingestion](docs/phase-4/catalog-ingestion.md#configuration).
 
-### `quorumctl`
+### Operational commands
 
-`migrate`, `import-catalog`, `catalog-refresh`, `catalog-status`, `doctor`,
-`backup`, `restore`. `doctor` and `catalog-status` exit non-zero on an empty or
-stale catalog, so staleness fails loudly rather than quietly breaching the
-provider's six-month cache limit.
+The server image carries a CLI: `migrate`, `import-catalog`, `catalog-refresh`,
+`catalog-status`, `doctor`, `purge`, `backup`, `restore`. `doctor` and
+`catalog-status` exit non-zero on an empty or stale catalog, so staleness fails
+loudly rather than quietly breaching the provider's six-month cache limit.
+
+```sh
+docker compose exec app node apps/api/dist/cli.js doctor
+```
+
+[`scripts/quorumctl`](scripts/quorumctl) wraps those in a shell script with the
+guardrails — it refuses to start without a token secret, refuses a rollback to
+anything but a digest, and makes `purge --room` and `restore` type the name
+back. Convenience only; nothing depends on it.
 
 ---
 
 ## Release and deployment
 
 Every push to `main` runs the release workflow: test, scan, publish a GHCR
-image, generate an SBOM, and cut a commit-named GitHub Release containing a
-checksum-protected, pull-only deployment bundle. No manual tag needed.
+image, generate an SBOM, and cut a commit-named GitHub Release. No manual tag
+needed.
 
-The production VM never clones this repository and never builds an image. The
-operator downloads the bundle, verifies the checksum, supplies the Cloudflare
-credential, then:
+Deploying is ordinary Compose — copy `deploy/.env.example`, create a token
+secret, `docker compose up -d`. See [running it in Docker](#in-docker) above,
+and [docs/self-hosting.md](docs/self-hosting.md) for the whole thing.
 
-```sh
-scripts/quorumctl start --tunnel
-scripts/quorumctl doctor
-```
+Two things are worth doing beyond the quickstart, and both are optional:
 
-Compose pulls the exact `ghcr.io/...@sha256:...` digest recorded in the
-bundle-generated `deploy/.env`.
+- **Pin the digest.** `.env.example` ships the `:latest` tag. Every release
+  records the exact `ghcr.io/...@sha256:...` it was built from, after the checks
+  and the image smoke test have passed; setting that as `QUORUM_IMAGE` is what
+  makes tonight's restart provably the image you scanned this morning.
+- **Use the release bundle.** Each release attaches `quorum-deploy.tar.gz` and a
+  `SHA256SUMS`: the same Compose file and scripts, plus a `deploy/.env` already
+  pinned to that release's digest. It saves the copy-and-pin by hand and lets
+  you verify the download. It contains nothing this repository does not, so a
+  host that would rather clone can clone.
 
 Procedures: [release runbook](docs/phase-1/release-runbook.md),
 [operator runbook](docs/phase-1/operator-runbook.md),
@@ -399,7 +443,7 @@ Known gaps, stated plainly:
 
 - [Phase 1 evidence](docs/phase-1/README.md) · [operator](docs/phase-1/operator-runbook.md) · [release](docs/phase-1/release-runbook.md) · [rollback](docs/phase-1/rollback-runbook.md)
 - [Dependency security policy](docs/phase-1/dependency-security-policy.md)
-- [Self-hosting guide](docs/self-hosting.md) — both ingress shapes and every configuration variable
+- [Self-hosting guide](docs/self-hosting.md) — the install, all three ingress shapes, and every configuration variable
 - [Phase 2 evidence](docs/phase-2/README.md) · [Phase 3 evidence](docs/phase-3/README.md)
 - [Catalog ingestion](docs/phase-4/catalog-ingestion.md) · [group recommendations](docs/phase-4/recommendations.md)
 

@@ -161,8 +161,10 @@ jobs:
             > "$bundle_root/deploy/.env"
           # Carry the commented ingress and tuning options across, so an
           # operator sees them where they will be editing rather than only in
-          # the example beside it.
-          tail -n +4 deploy/.env.example >> "$bundle_root/deploy/.env"
+          # the example beside it. Everything above the ingress marker is the
+          # image and volume, which the digest pin above has already set.
+          sed -n '/^# --- Ingress/,$p' deploy/.env.example >> "$bundle_root/deploy/.env"
+          grep -q '^# --- Ingress' deploy/.env.example
           printf 'release=%s\ncommit=%s\nimage=ghcr.io/%s@%s\n' \
             "$RELEASE_ID" \
             "$GITHUB_SHA" \

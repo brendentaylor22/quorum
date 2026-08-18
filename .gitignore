@@ -19,3 +19,11 @@ dev-token-secret
 
 deploy/secrets/*
 !deploy/secrets/README.md
+
+# The live tunnel configuration names a real hostname and tunnel UUID; only the
+# example ships.
+deploy/cloudflared/config.yml
+
+# Deployment notes specific to one operator: hostnames, co-tenant services,
+# and network layout that should not ship with the public project.
+docs/local/

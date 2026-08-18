@@ -74,6 +74,23 @@ function createSandbox(): Sandbox {
   };
 }
 
+/**
+ * Compose bind-mounts the tunnel configuration and credential as files, so
+ * `start --tunnel` preflights both. Lay down a configured pair.
+ */
+function writeTunnelFiles(): void {
+  mkdirSync(join(sandbox.root, 'deploy/cloudflared'), { recursive: true });
+  mkdirSync(join(sandbox.root, 'deploy/secrets'), { recursive: true });
+  writeFileSync(
+    join(sandbox.root, 'deploy/cloudflared/config.yml'),
+    'tunnel: 6ff6f0ba-1234-4d0c-9c1e-2f8f2a5c9e11\ningress:\n  - hostname: quorum.example.org\n    service: http://app:3000\n  - service: http_status:404\n',
+  );
+  writeFileSync(
+    join(sandbox.root, 'deploy/secrets/tunnel-credentials.json'),
+    '{"AccountTag":"stub"}',
+  );
+}
+
 let sandbox: Sandbox;
 
 beforeEach(() => {
@@ -178,9 +195,11 @@ describe('quorumctl', () => {
       'a'.repeat(64),
     );
 
+    writeTunnelFiles();
     const tunnel = await invoke(['start', '--tunnel']);
     expect(tunnel.status).toBe(0);
     expect(tunnel.dockerCalls.join('\n')).toContain('--profile tunnel');
+    expect(tunnel.stderr).toContain('QUORUM_TRUST_PROXY');
 
     // The proxy cannot get a certificate without a hostname, and Compose
     // cannot enforce that without making the topology unvalidatable.
@@ -197,9 +216,100 @@ describe('quorumctl', () => {
     expect(proxy.status).toBe(0);
     expect(proxy.dockerCalls.join('\n')).toContain('--profile proxy');
 
+    // The common self-hosted case: something already terminates TLS on this
+    // host, so Quorum brings no ingress of its own.
+    const existing = await invoke(['start', '--existing-ingress']);
+    expect(existing.status).toBe(0);
+    // The recording stub appends, so only the newest call belongs to this
+    // invocation — the earlier ones above are still in the log.
+    const existingCall = existing.dockerCalls.at(-1) ?? '';
+    expect(existingCall).toContain('up --detach app');
+    expect(existingCall).not.toContain('--profile');
+    expect(existing.stderr).toContain('quorum-edge');
+    expect(existing.stderr).toContain('QUORUM_TRUST_PROXY');
+
     // A typo must not silently start an instance nobody can reach.
     const wrong = await invoke(['start', '--tunnnel']);
     expect(wrong.status).toBe(2);
+  });
+
+  it('refuses a tunnel start until its configuration and credential exist', async () => {
+    writeFileSync(sandbox.envFile, pinnedEnv);
+    mkdirSync(join(sandbox.root, 'deploy/secrets'), { recursive: true });
+    writeFileSync(
+      join(sandbox.root, 'deploy/secrets/token-secret'),
+      'a'.repeat(64),
+    );
+
+    // Missing entirely: Docker would create a directory at the mount point and
+    // cloudflared would fail on a path the operator never typed.
+    const missing = await invoke(['start', '--tunnel']);
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain('deploy/cloudflared/config.yml');
+    expect(missing.stderr).toContain('config.example.yml');
+    expect(missing.dockerCalls).toHaveLength(0);
+
+    // Copied but not edited: the placeholder UUID names no tunnel.
+    mkdirSync(join(sandbox.root, 'deploy/cloudflared'), { recursive: true });
+    copyFileSync(
+      resolve(
+        import.meta.dirname,
+        '../../deploy/cloudflared/config.example.yml',
+      ),
+      join(sandbox.root, 'deploy/cloudflared/config.yml'),
+    );
+    const placeholder = await invoke(['start', '--tunnel']);
+    expect(placeholder.status).toBe(1);
+    expect(placeholder.stderr).toContain('placeholder');
+    expect(placeholder.dockerCalls).toHaveLength(0);
+
+    // Configured, but the credential never made it onto this host.
+    writeFileSync(
+      join(sandbox.root, 'deploy/cloudflared/config.yml'),
+      'tunnel: 6ff6f0ba-1234-4d0c-9c1e-2f8f2a5c9e11\ningress:\n  - hostname: quorum.example.org\n    service: http://app:3000\n',
+    );
+    const uncredentialed = await invoke(['start', '--tunnel']);
+    expect(uncredentialed.status).toBe(1);
+    expect(uncredentialed.stderr).toContain('tunnel-credentials.json');
+    expect(uncredentialed.stderr).toContain('65532');
+    expect(uncredentialed.dockerCalls).toHaveLength(0);
+  });
+
+  it('prints whole links for a tunnel session using the hostname in the tunnel config', async () => {
+    // A tunnel operator sets the hostname in config.yml, never in .env, so the
+    // link would otherwise degrade to a bare path.
+    writeFileSync(sandbox.envFile, pinnedEnv);
+    mkdirSync(join(sandbox.root, 'deploy/secrets'), { recursive: true });
+    writeFileSync(
+      join(sandbox.root, 'deploy/secrets/token-secret'),
+      'a'.repeat(64),
+    );
+    writeTunnelFiles();
+    // Report the container healthy, then answer `create-room` with the CLI's
+    // single-line JSON, echoing back the base URL it was handed as its last
+    // argument.
+    const stub = [
+      '#!/bin/sh',
+      `printf '%s\\n' "$*" >> '${sandbox.dockerLog}'`,
+      'case "$*" in',
+      "  *'ps --quiet app'*) printf 'container-id\\n' ;;",
+      "  *inspect*) printf 'healthy\\n' ;;",
+      '  *create-room*)',
+      '    base_url=${*##* }',
+      `    printf '{"roomId":"abc","hostUrl":"%s/host/abc","inviteUrl":"%s/join/abc","inviteToken":"amber-otter","expiresAt":"2026-01-01T00:00:00Z"}\\n' "$base_url" "$base_url"`,
+      '    ;;',
+      'esac',
+      'exit 0',
+      '',
+    ].join('\n');
+    writeFileSync(join(sandbox.binDirectory, 'docker'), stub);
+    chmodSync(join(sandbox.binDirectory, 'docker'), 0o755);
+
+    const result = await invoke(['session', '--tunnel']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('https://quorum.example.org/host/abc');
+    expect(result.stdout).toContain('https://quorum.example.org/join/abc');
   });
 
   it('says plainly that a start with no ingress serves nobody', async () => {

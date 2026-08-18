@@ -1,4 +1,8 @@
-import type { CatalogSource, InstanceInfo } from '@quorum/contracts';
+import type {
+  CatalogSource,
+  InstanceInfo,
+  RoomCreationMode,
+} from '@quorum/contracts';
 import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { CreateScreen } from './screens/CreateScreen.js';
@@ -38,9 +42,17 @@ function CatalogNotice({ source }: { source: CatalogSource | null }) {
 function useSiteInfo(): {
   catalog: CatalogSource | null;
   instance: InstanceInfo | null;
+  roomCreation: RoomCreationMode | null;
 } {
   const [catalog, setCatalog] = useState<CatalogSource | null>(null);
   const [instance, setInstance] = useState<InstanceInfo | null>(null);
+  // Kept apart from `instance` so a failed call can fall back without inventing
+  // a source URL for the footer. `public` is the right fallback: it is the
+  // shipped default, and it leaves the button working rather than stuck
+  // disabled on an instance that never closed anything.
+  const [roomCreation, setRoomCreation] = useState<RoomCreationMode | null>(
+    null,
+  );
 
   useEffect(() => {
     let active = true;
@@ -53,15 +65,19 @@ function useSiteInfo(): {
     api
       .instance()
       .then((value) => {
-        if (active) setInstance(value);
+        if (!active) return;
+        setInstance(value);
+        setRoomCreation(value.roomCreation);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setRoomCreation('public');
+      });
     return () => {
       active = false;
     };
   }, []);
 
-  return { catalog, instance };
+  return { catalog, instance, roomCreation };
 }
 
 /**
@@ -71,7 +87,7 @@ function useSiteInfo(): {
 export function App() {
   const segments = globalThis.location.pathname.split('/').filter(Boolean);
   const [route, token] = segments;
-  const { catalog, instance } = useSiteInfo();
+  const { catalog, instance, roomCreation } = useSiteInfo();
   // Inside a room the headline has done its job, and on a phone it costs a
   // third of the screen that the voting card needs. Only the landing page,
   // where it is the pitch, keeps it.
@@ -94,7 +110,7 @@ export function App() {
       ) : route === 'host' && token !== undefined ? (
         <HostScreen hostToken={token} />
       ) : (
-        <CreateScreen />
+        <CreateScreen roomCreation={roomCreation} />
       )}
       <footer>
         <CatalogNotice source={catalog} />
