@@ -190,7 +190,7 @@ Cloud migration later reuses image and Compose concepts on dedicated VM. Cloud-p
 
 - Public room participation needs no account.
 - Invite URL contains at least 128 bits of random entropy; never use short code as sole authorization.
-- Separate host-control secret grants room administration. Store only keyed hashes of invite, host, and participant session tokens.
+- Separate host-control secret grants room administration. Store only keyed hashes of host and participant session tokens. The invite phrase is additionally held in the clear for a live lobby so the host can re-share it, and cleared on expiry — threat model T01b.
 - Cookies: `Secure`, `HttpOnly`, `SameSite=Lax`, narrow path/domain, rotation on join, bounded expiry.
 - Every mutation validates room state, participant membership, CSRF/origin, payload schema, and authorization server-side.
 - Display names are escaped text with strict length and character limits.
