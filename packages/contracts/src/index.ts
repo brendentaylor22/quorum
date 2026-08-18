@@ -173,6 +173,11 @@ export const roomViewSchema = z.object({
   /** Completed round numbers, oldest first, each with readable results. */
   completedRounds: z.array(z.number().int().positive()),
   /**
+   * The invite phrase, so the host can re-share it from whatever device holds
+   * host controls. Null for everyone but the host, and once the lobby closes.
+   */
+  invite: z.string().nullable(),
+  /**
    * Whether the host may open another round. False when voting is still open,
    * or when too few unseen movies remain to build a full slate.
    */
@@ -305,6 +310,15 @@ export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 /** Cookie name carrying a room-scoped anonymous participant session. */
 export function sessionCookieName(roomId: string): string {
   return `quorum_session_${roomId}`;
+}
+
+/**
+ * Cookie name carrying the room-scoped host session issued to the device that
+ * claimed the host screen. It stands in for the host capability on that device
+ * alone, and is replaced whenever another device claims the room.
+ */
+export function hostCookieName(roomId: string): string {
+  return `quorum_host_${roomId}`;
 }
 
 /** Header carrying the host-control capability. Never sent automatically. */

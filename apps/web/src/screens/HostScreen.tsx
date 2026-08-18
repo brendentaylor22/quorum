@@ -164,7 +164,10 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
   }
   if (room === null) return <p className="lede">Loading host controls…</p>;
 
-  const invite = recallInvite(room.roomId);
+  // The server hands the host the invite phrase, so a room minted from a shell
+  // can still be shared from here. Local storage is the fallback for rooms
+  // created before the phrase was kept.
+  const invite = room.invite ?? recallInvite(room.roomId);
   const everyoneDone =
     room.participants.length > 0 &&
     room.participants.every((participant) => participant.complete);
@@ -207,8 +210,8 @@ export function HostScreen({ hostToken }: { hostToken: string }) {
         <section>
           <h2>Invite the group</h2>
           <p className="lede">
-            Open this page on the device that created the room to see the invite
-            link again.
+            The invite link for this room is not available here. Share the one
+            printed when the room was created, or create a new room.
           </p>
         </section>
       ) : null}

@@ -25,7 +25,9 @@ Trust ends at every arrow. Browser state, forwarded headers, container image, ex
 |---|---|---|---|---|
 | T01 | Token discovery | Guess invite/host/session capability; enter or control room | Host/session >=128 random bits; invite >=77 bits (see T01a); keyed hashes; uniform failures; rate limits | Entropy unit test; invalid/modified-token integration tests; log redaction test |
 | T01a | Invite phrase guessing | Guess a six-word invite phrase; enter one room as an extra participant | Accepted reduction to ~77.5 bits so the invite can be spoken and retyped; bounded to the invite alone, which grants no host authority, expires with a <=24h lobby, and admits at most 20 people; host/session capabilities unchanged at 256 bits | Word-list size and phrase entropy unit tests; uniform-draw test; `capabilities.ts` records the trade |
+| T01b | Invite phrase at rest | Database or backup read yields invite phrases and admits the reader to live rooms | Accepted: the phrase is stored in the clear beside its hash so the host screen can re-share a room minted outside a browser; bounded to live lobbies (<=24h) and cleared on expiry; grants no host authority; host and session capabilities remain hash-only | `rooms.invite_token` cleared by `markRoomExpired`; host-only exposure test in `app.test.ts` |
 | T02 | Room hijack | Invite recipient obtains host authority | Separate capabilities and endpoints; host secret never in invite/session; explicit host auth | Participant-close denial test; URL/referrer inspection |
+| T02a | Host claim takeover | A second holder of the host link claims the room and displaces the first device's host session | Accepted: the host capability, not the claim, is the authority, so a holder reopening the link on another device must not be locked out; each claim retires the previous host session and is audited (`host.claimed`, `host.reclaimed`) | Claim reissue and stale-session tests in `app.test.ts`; audit rows |
 | T03 | Vote forgery | Submit for another participant, room, item, or twice | Server derives identity from session; relational ownership checks; unique exposure interaction; transaction | Cross-room/cross-participant tests; concurrent duplicate test |
 | T04 | Scraping | Enumerate rooms or bulk-copy catalog/posters | Unguessable URLs; uniform responses; request caps; no list/search endpoint; Cloudflare rate control | Enumeration test; route inventory; rate-limit evidence |
 | T05 | Denial of service | Room creation, join, swipe, expensive reads exhaust CPU/disk | Body/participant/room limits; bounded queries; timeouts; rate controls; resource/PID/disk monitoring | Load test at declared limit; abuse test; disk-full drill |
@@ -49,7 +51,9 @@ stays a statement of what is built.
 | ID | Built | Not built |
 |---|---|---|
 | T01, T01a | Entropy, keyed hashes, uniform failures, rate limits | — |
+| T01b | Invite phrase stored in the clear for a live room only, cleared on expiry, shown to the host alone | — |
 | T02 | Separate capabilities and endpoints; host secret never in invite or session | — |
+| T02a | Host session issued on claim, room-scoped, `HttpOnly`, superseded by a later claim, audited | — |
 | T03 | Session-derived identity, ownership checks, unique exposure interaction, transactions | — |
 | T04 | Unguessable URLs, uniform responses, no list or search endpoint, request caps | Cloudflare rate control is operator-dependent; Quorum no longer assumes Cloudflare |
 | T05 | Body, participant, and room-creation caps; per-source and per-session rate limits; bounded queries | Load test at the declared limit (Phase 5) |

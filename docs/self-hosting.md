@@ -452,9 +452,12 @@ tomorrow if it has not expired.
 
 ### What this actually protects
 
-- **The host link is the host credential.** Whoever opens it first becomes the
-  host; a second attempt is refused with a conflict rather than quietly making
-  someone a second host. So open it yourself before sharing anything.
+- **The host link is the host credential.** The first device to open it claims
+  the room and is issued a host session, so a room minted from a shell can be
+  hosted from a phone — and the host screen shows the invite link there too. A
+  later device holding the same link claims it in turn, which is what stops you
+  locking yourself out when you reopen it elsewhere. So open it yourself before
+  sharing anything, and share only the invite.
 - **The invite phrase is what friends get.** Six words, ~77.5 bits, good for one
   room that expires within 24 hours and holds at most 20 people. It grants entry
   and no host authority.
@@ -668,10 +671,10 @@ behaviour. Run a catalog refresh.
 misspelling, which is read as `operator` on purpose. Unset it, or set it to
 exactly `public`.
 
-**The host link says the room already has a host.** Host links are claimed once,
-first come first served. Somebody opened it before you, or you opened it in a
-browser that has since lost its session cookie. Mint a new room; the old one
-expires on its own.
+**The host screen says the room already has a host.** That is the player seat,
+not the controls: the host may join the voting once, and a second attempt is
+refused with a conflict. Host controls themselves are never refused to a device
+holding the host link — opening it again simply moves the claim to that device.
 
 **The invite link points at the wrong address.** Invite links are built from the
 address the host used to create the room. Use the public hostname, not the

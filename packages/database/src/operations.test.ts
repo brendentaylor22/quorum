@@ -24,6 +24,7 @@ describe('database operations', () => {
       '0004_rounds.sql',
       '0005_catalog_images.sql',
       '0006_slate_scores.sql',
+      '0007_host_claim.sql',
     ]);
     expect(migrate(database, migrationsDirectory)).toEqual([]);
     database
