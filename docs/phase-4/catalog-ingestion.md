@@ -98,9 +98,14 @@ Reviewed in [`docs/phase-0/tmdb-use-review.md`](../phase-0/tmdb-use-review.md). 
 - **Non-commercial only.** Any revenue, advertising, or business use stops import until written permission exists.
 - **Never publish a database backup.** Backups contain bulk TMDB metadata; distributing one crosses into redistribution. `backups/` and `*.db` are gitignored — keep it that way.
 
+### Attribution in the UI
+
+The review's three UI obligations are all met. The privacy page carries a **Where the movie data comes from** credits section holding the required notice, a link to `https://www.themoviedb.org`, and the approved **Primary short (blue)** logo, taken unmodified from TMDB's own logos page. The logo is capped at `11rem` — well under the page heading — so Quorum's branding stays the more prominent of the two, and it renders only when a TMDB catalog is actually installed, since a fixture-only instance shows no TMDB data. Provenance, the verifiable SHA-256, and the rules the asset is used under are recorded beside it in `apps/web/src/assets/README.md`.
+
+The footer notice remains on every screen, because the terms ask for the notice wherever the data appears, not only in credits.
+
 ### Outstanding
 
-- The TMDB **logo** is not yet shipped in an About/Credits view. The review requires the approved, unmodified logo shown less prominently than Quorum branding. The text notice and link are in place; the logo asset is not.
 - The review notes TMDB's terms page and developer FAQ word the required notice slightly differently. The wording used here matches the FAQ. Confirm against the current registration agreement before the pilot.
 
 ## Open questions for the recommender

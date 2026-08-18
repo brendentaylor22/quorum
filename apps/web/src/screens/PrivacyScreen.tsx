@@ -1,4 +1,5 @@
 import type { CatalogSource, InstanceInfo } from '@quorum/contracts';
+import tmdbLogo from '../assets/tmdb-primary-short.svg';
 
 /**
  * The privacy notice.
@@ -95,6 +96,33 @@ export function PrivacyScreen({
         who has the invite can join and vote. That is the trade for needing no
         account — treat the link the way you would treat the room itself.
       </p>
+
+      {catalog?.attribution == null ? null : (
+        <>
+          <h3>Where the movie data comes from</h3>
+          <p>
+            Titles, synopses, and poster images come from TMDB. Quorum is not
+            affiliated with them, and this page is where that is recorded rather
+            than only in a footer line.
+          </p>
+          <p>{catalog.attribution}</p>
+          {/*
+            TMDB's terms require the logo be shown unmodified and less
+            prominently than Quorum's own branding, so it is sized well below
+            the page heading and carries no styling beyond that. It renders only
+            when a TMDB catalogue is installed — a fixture-only instance uses no
+            TMDB data and shows no TMDB branding. Provenance and the rules this
+            asset is used under: `apps/web/src/assets/README.md`.
+          */}
+          <a
+            className="provider-logo"
+            href="https://www.themoviedb.org"
+            rel="noreferrer noopener"
+          >
+            <img src={tmdbLogo} alt="The Movie Database (TMDB)" />
+          </a>
+        </>
+      )}
 
       {instance === null ? null : (
         <>
