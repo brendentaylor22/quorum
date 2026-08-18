@@ -115,7 +115,15 @@ export function issuePublicId(): string {
   return randomBytes(PUBLIC_ID_BYTES).toString('base64url');
 }
 
-/** Store only keyed hashes of invite, host, and session capabilities. */
+/**
+ * Derive the stored keyed hash of a capability.
+ *
+ * Host and session capabilities are stored as this hash and nothing else. The
+ * invite is the one exception: migration `0007` keeps `rooms.invite_token`
+ * beside its hash so the host screen can re-share a room minted outside a
+ * browser. That is threat model T01b — accepted, bounded to a live lobby, and
+ * cleared by `markRoomExpired`.
+ */
 export function hashCapability(secret: Buffer, token: string): string {
   return createHmac('sha256', secret).update(token, 'utf8').digest('hex');
 }

@@ -33,7 +33,7 @@ This repository records engineering interpretation, not legal advice.
 Recorded without credential values:
 
 ```text
-TMDB account owner: brenden.taylor22
+TMDB account owner: repository maintainer (operator)
 Application name: Quorum
 Application URL: https://github.com/brendentaylor22/quorum
 Purpose declared: personal, non-commercial group movie voting
@@ -42,7 +42,7 @@ Registration approved on: 2026-08-11
 Credential type: TMDB API Read Access Token used as a Bearer token
 Local secret location: ignored .env as TMDB_READ_ACCESS_TOKEN
 Production secret location: dedicated VM Docker secret mounted at /run/secrets/tmdb_read_access_token
-Reviewer: brenden.taylor22
+Reviewer: repository maintainer (operator)
 ```
 
 Local `.env` use is development-only. Production must mount a read-only secret
