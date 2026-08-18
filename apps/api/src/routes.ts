@@ -2,6 +2,7 @@ import {
   HOST_TOKEN_HEADER,
   REQUEST_HEADER,
   capabilityTokenSchema,
+  hostCookieName,
   createRoomResponseSchema,
   joinRequestSchema,
   publicIdSchema,
@@ -35,6 +36,20 @@ function sessionToken(
   return capabilityTokenSchema.safeParse(value).success ? value : undefined;
 }
 
+/**
+ * The host session this device holds for a room, if it has claimed one. It
+ * stands in for the host capability so host controls survive a link that never
+ * made it intact into a chat app.
+ */
+function hostClaim(
+  request: FastifyRequest,
+  roomId: string,
+): string | undefined {
+  const value = request.cookies[hostCookieName(roomId)];
+  if (value === undefined) return undefined;
+  return capabilityTokenSchema.safeParse(value).success ? value : undefined;
+}
+
 function requireSameOrigin(request: FastifyRequest): void {
   if (request.headers[REQUEST_HEADER] !== '1') {
     throw new ApiError(400, 'invalid_request', 'Missing request header');
@@ -58,6 +73,16 @@ function requireSameOrigin(request: FastifyRequest): void {
  */
 function bucketId(secret: string): string {
   return createHash('sha256').update(secret).digest('hex').slice(0, 16);
+}
+
+/**
+ * Rate-limit scope for a host mutation. Either credential identifies the same
+ * host, so a device acting through its host session shares one bucket with the
+ * capability rather than getting a second allowance.
+ */
+function hostBucket(request: FastifyRequest, roomId: string): string {
+  const token = hostToken(request) ?? hostClaim(request, roomId);
+  return `h:${bucketId(token ?? '')}`;
 }
 
 function parsePathToken(value: unknown): string {
@@ -89,6 +114,20 @@ function setSessionCookie(
   token: string,
 ): void {
   reply.setCookie(sessionCookieName(roomId), token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: secureCookies(),
+    path: '/',
+    maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+  });
+}
+
+function setHostCookie(
+  reply: FastifyReply,
+  roomId: string,
+  token: string,
+): void {
+  reply.setCookie(hostCookieName(roomId), token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: secureCookies(),
@@ -272,16 +311,31 @@ export function registerRoomRoutes(
     });
   });
 
-  app.get('/api/host/:hostToken', (request) => {
+  /**
+   * Open the host screen. Whoever gets here first claims the room: the reply
+   * carries a host session for this device, which is what makes a link minted
+   * in a shell on the server usable from a phone. A later device presenting
+   * the capability claims it in turn.
+   */
+  app.get('/api/host/:hostToken', (request, reply) => {
     spend(request, POLICIES.capabilityRead);
     const { hostToken: token } = request.params as { hostToken: string };
     const capability = parsePathToken(token);
     const room = service.roomByHostCapability(capability);
+    let claim = hostClaim(request, room.publicId);
+    // A superseded cookie is not an error: this device holds the capability, so
+    // it claims the room back rather than being turned away.
+    if (claim === undefined || !service.holdsHostClaim(room.publicId, claim)) {
+      const claimed = service.claimHost(capability);
+      claim = claimed.claimToken;
+      setHostCookie(reply, room.publicId, claim);
+    }
     // Resolve the session too, so a host who is also playing sees their card.
     const { room: resolved, caller } = service.resolveCaller(
       room.publicId,
       sessionToken(request, room.publicId),
       capability,
+      claim,
     );
     return service.view(resolved, caller);
   });
@@ -301,6 +355,7 @@ export function registerRoomRoutes(
       joined.roomId,
       joined.sessionToken,
       capability,
+      hostClaim(request, joined.roomId),
     );
     return reply.code(201).send({
       participantId: joined.participantId,
@@ -315,6 +370,7 @@ export function registerRoomRoutes(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     return service.view(room, caller);
   });
@@ -322,16 +378,17 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/start', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
-    spend(
-      request,
-      POLICIES.hostMutation,
-      `h:${bucketId(hostToken(request) ?? '')}`,
+    spend(request, POLICIES.hostMutation, hostBucket(request, roomId));
+    const room = service.start(
+      roomId,
+      hostToken(request),
+      hostClaim(request, roomId),
     );
-    const room = service.start(roomId, hostToken(request));
     const { caller } = service.resolveCaller(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     return service.view(room, caller);
   });
@@ -339,16 +396,17 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/close', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
-    spend(
-      request,
-      POLICIES.hostMutation,
-      `h:${bucketId(hostToken(request) ?? '')}`,
+    spend(request, POLICIES.hostMutation, hostBucket(request, roomId));
+    const room = service.close(
+      roomId,
+      hostToken(request),
+      hostClaim(request, roomId),
     );
-    const room = service.close(roomId, hostToken(request));
     const { caller } = service.resolveCaller(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     return service.view(room, caller);
   });
@@ -356,12 +414,8 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/expire', (request, reply) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
-    spend(
-      request,
-      POLICIES.hostMutation,
-      `h:${bucketId(hostToken(request) ?? '')}`,
-    );
-    service.expire(roomId, hostToken(request));
+    spend(request, POLICIES.hostMutation, hostBucket(request, roomId));
+    service.expire(roomId, hostToken(request), hostClaim(request, roomId));
     return reply.code(204).send();
   });
 
@@ -377,6 +431,7 @@ export function registerRoomRoutes(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     if (caller.participant === undefined) throw notFound();
     const confirmation = service.swipe(
@@ -389,6 +444,7 @@ export function registerRoomRoutes(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     return {
       exposureId: parsed.data.exposureId,
@@ -402,16 +458,17 @@ export function registerRoomRoutes(
   app.post('/api/rooms/:roomId/continue', (request) => {
     requireSameOrigin(request);
     const roomId = parseRoomId((request.params as { roomId: string }).roomId);
-    spend(
-      request,
-      POLICIES.hostMutation,
-      `h:${bucketId(hostToken(request) ?? '')}`,
+    spend(request, POLICIES.hostMutation, hostBucket(request, roomId));
+    const room = service.continueVoting(
+      roomId,
+      hostToken(request),
+      hostClaim(request, roomId),
     );
-    const room = service.continueVoting(roomId, hostToken(request));
     const { caller } = service.resolveCaller(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     return service.view(room, caller);
   });
@@ -423,6 +480,7 @@ export function registerRoomRoutes(
       roomId,
       sessionToken(request, roomId),
       hostToken(request),
+      hostClaim(request, roomId),
     );
     return service.results(room, parseRound(request));
   });
