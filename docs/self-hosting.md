@@ -330,16 +330,60 @@ connection and Cloudflare routes to it. This is the shape
 [ADR 0003](adr/0003-cloudflare-tunnel.md) chose, and it is the better option
 behind a home router.
 
-Put the tunnel credential at `deploy/secrets/tunnel-credentials.json` (mode
-`0440`, group `65532`), set the hostname in `deploy/cloudflared/config.yml`,
-then:
+Unlike a DNS record pointing at your address, the hostname resolves to
+Cloudflare and the route lives in the tunnel, so nothing about your address —
+static, dynamic, or behind CGNAT — matters.
 
-Set `QUORUM_TRUST_PROXY=true` in `.env`, then:
+On a machine with `cloudflared` installed and logged in (`cloudflared tunnel
+login`), create the tunnel and route the hostname to it. Both are one-time:
+
+```sh
+cloudflared tunnel create quorum
+cloudflared tunnel route dns quorum quorum.example.org
+```
+
+`create` prints a tunnel UUID and writes a credentials JSON file. `route dns`
+creates the proxied `CNAME` to `<uuid>.cfargotunnel.com` in your Cloudflare
+zone; it cannot be turned off (grey-clouded), which is the point.
+
+Move both onto the deployment host:
+
+```sh
+cp deploy/cloudflared/config.example.yml deploy/cloudflared/config.yml
+# Set `tunnel:` to the UUID and `hostname:` to the name you just routed.
+
+cp ~/.cloudflared/<uuid>.json deploy/secrets/tunnel-credentials.json
+sudo chgrp 65532 deploy/secrets/tunnel-credentials.json
+chmod 0440 deploy/secrets/tunnel-credentials.json
+```
+
+The credential is a bearer token for the tunnel: anyone holding it can serve
+traffic on that hostname. Group `65532` is the unprivileged user `cloudflared`
+runs as, and `0440` is the least that lets it read. `config.yml` is ignored by
+Git, so your real hostname and UUID stay out of the repository.
+
+Set `QUORUM_TRUST_PROXY=true` in `.env` — every request arrives from the
+tunnel, so without it the whole household shares one rate-limit bucket. Then:
+
+```sh
+scripts/quorumctl start --tunnel
+scripts/quorumctl doctor
+```
+
+`quorumctl` refuses to start until the configuration and credential are both
+in place, because a missing bind-mount source becomes an empty directory and
+`cloudflared` fails on a path you never typed. The equivalent without it:
 
 ```sh
 docker compose --profile tunnel up -d
 docker compose exec app node apps/api/dist/cli.js doctor
 ```
+
+`scripts/quorumctl session --tunnel` reads the hostname straight out of
+`config.yml`, so it prints whole links without `QUORUM_PUBLIC_URL` being set.
+
+Only `cloudflared` joins the outbound network; the application still publishes
+no port and still has no route to the Internet.
 
 ### What is not supported
 

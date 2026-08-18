@@ -7,6 +7,8 @@ compose_file="$project_dir/deploy/compose.yaml"
 env_file="$project_dir/deploy/.env"
 backups_dir="$project_dir/deploy/backups"
 token_secret_file="$project_dir/deploy/secrets/token-secret"
+tunnel_config_file="$project_dir/deploy/cloudflared/config.yml"
+tunnel_credentials_file="$project_dir/deploy/secrets/tunnel-credentials.json"
 runtime_uid=10001
 
 usage() {
@@ -84,6 +86,41 @@ require_proxy_settings() {
   fi
 }
 
+# Compose bind-mounts the tunnel configuration and credential as files. If
+# either is missing, Docker helpfully creates a *directory* at the mount point
+# and `cloudflared` fails with a parse error naming a path the operator never
+# typed. Both are also useless while they still hold the placeholder, so check
+# for that too and say which step was skipped.
+require_tunnel_settings() {
+  if [ ! -f "$tunnel_config_file" ]; then
+    printf 'Missing tunnel configuration: %s\n' "$tunnel_config_file" >&2
+    printf 'Start from the shipped example: cp %s %s\n' \
+      "$project_dir/deploy/cloudflared/config.example.yml" "$tunnel_config_file" >&2
+    exit 1
+  fi
+  if grep -q 'REPLACE_WITH_TUNNEL_UUID' "$tunnel_config_file"; then
+    printf 'Tunnel configuration still holds the placeholder UUID: %s\n' "$tunnel_config_file" >&2
+    printf '%s\n' 'Set `tunnel:` to the UUID from `cloudflared tunnel create`, and `hostname:` to the name you routed to it.' >&2
+    exit 1
+  fi
+  if [ ! -s "$tunnel_credentials_file" ]; then
+    printf 'Missing tunnel credential: %s\n' "$tunnel_credentials_file" >&2
+    printf '%s\n' 'Copy the JSON that `cloudflared tunnel create` wrote, then:' >&2
+    printf 'sudo chgrp 65532 %s && chmod 0440 %s\n' \
+      "$tunnel_credentials_file" "$tunnel_credentials_file" >&2
+    exit 1
+  fi
+}
+
+# The hostname a tunnel serves lives in the tunnel configuration, not in .env,
+# so `session --tunnel` has no QUORUM_PUBLIC_HOSTNAME to fall back on. Read the
+# first ingress hostname instead, which is the one Quorum is routed to.
+tunnel_hostname() {
+  [ -f "$tunnel_config_file" ] || return 0
+  sed -n 's/^[[:space:]]*-\{0,1\}[[:space:]]*hostname:[[:space:]]*//p' "$tunnel_config_file" \
+    | sed -n '1p' | tr -d "\"' \r"
+}
+
 env_value() {
   sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$env_file" | sed -n '1p'
 }
@@ -99,7 +136,12 @@ start_stack() {
   require_env
   require_token_secret
   case "${1:-}" in
-    --tunnel) compose --profile tunnel up --detach ;;
+    --tunnel)
+      require_tunnel_settings
+      compose --profile tunnel up --detach
+      printf '%s\n' 'Started behind a Cloudflare tunnel. No inbound port is open on this host.' >&2
+      printf '%s\n' 'Set QUORUM_TRUST_PROXY=true in deploy/.env, or every caller shares one rate-limit bucket.' >&2
+      ;;
     --proxy)
       require_proxy_settings
       compose --profile proxy up --detach
@@ -166,6 +208,7 @@ case "$command" in
     base_url=$(env_value QUORUM_PUBLIC_URL)
     if [ -z "${base_url:-}" ]; then
       hostname=$(env_value QUORUM_PUBLIC_HOSTNAME)
+      [ -n "${hostname:-}" ] || hostname=$(tunnel_hostname)
       [ -z "${hostname:-}" ] || base_url="https://$hostname"
     fi
     room=$(compose exec --no-TTY app node apps/api/dist/cli.js create-room "${base_url:-}")

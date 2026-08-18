@@ -68,7 +68,7 @@ manual ones.
    rate-limit bucket, because every request appears to come from the ingress
    container.
 
-   For the tunnel, copy `deploy/cloudflared/config.example.yml` to `deploy/cloudflared/config.yml` and set tunnel UUID/hostname. Place tunnel credential JSON at `deploy/secrets/tunnel-credentials.json`. Ensure numeric group `65532` exists, then set credential owner to deployment administrator, group to `65532`, and mode to `0440`; non-root `cloudflared` runs with that GID.
+   For the tunnel, create it and route the hostname to it from a workstation with `cloudflared` logged in — `cloudflared tunnel create quorum`, then `cloudflared tunnel route dns quorum <hostname>`, which writes the proxied `CNAME` to `<uuid>.cfargotunnel.com` in the Cloudflare zone. Copy `deploy/cloudflared/config.example.yml` to `deploy/cloudflared/config.yml` and set tunnel UUID/hostname. Place tunnel credential JSON at `deploy/secrets/tunnel-credentials.json`. Ensure numeric group `65532` exists, then set credential owner to deployment administrator, group to `65532`, and mode to `0440`; non-root `cloudflared` runs with that GID.
 
    ```sh
    getent group 65532 >/dev/null || sudo groupadd --gid 65532 cloudflared-runtime
