@@ -5,10 +5,10 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [implementation plan](https://github.com/brendentaylor22/quorum/blob/main/QUORUM_IMPLEMENTATION_PLAN.md)
+        Check the [product contract](https://github.com/brendentaylor22/quorum/blob/main/docs/product-contract.md)
         first. Accounts, series, streaming-provider filters, WebSockets, PWA, and
-        collaborative filtering are deferred rather than forgotten, and the plan
-        says why.
+        collaborative filtering are deferred rather than forgotten — see
+        [CONTRIBUTING.md](https://github.com/brendentaylor22/quorum/blob/main/CONTRIBUTING.md).
 
   - type: textarea
     id: problem

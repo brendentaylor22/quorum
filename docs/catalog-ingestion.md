@@ -6,7 +6,7 @@ Scope: this covers the **first 20** — the round-one slate drawn at random from
 
 ## Why a local snapshot, not live polling
 
-The application container joins only `quorum-edge`, which is `internal: true`. It has **no route to the Internet at all**, and the Phase 4 exit gate tests exactly that. A live TMDB call from the request path would dismantle it.
+The application container joins only `quorum-edge`, which is `internal: true`. It has **no route to the Internet at all**. A live TMDB call from the request path would dismantle it.
 
 Three further reasons:
 
@@ -88,7 +88,7 @@ Instead the refresh is deliberate, and staleness is made visible: `catalog-statu
 
 ## TMDB obligations
 
-Reviewed in [`docs/phase-0/tmdb-use-review.md`](../phase-0/tmdb-use-review.md). What the code enforces:
+Reviewed in [`docs/tmdb-use-review.md`](tmdb-use-review.md). What the code enforces:
 
 - **Credential handling.** Read from a file into a bearer header. It never reaches a URL, so it cannot leak through a log line, proxy record, or error message. `redactUrl` masks secret-shaped query parameters defensively. Tests assert the token appears in neither the request URL nor the retry callback.
 - **Attribution.** `GET /api/catalog` returns the provider actually installed and the notice it requires; the client renders that rather than a hard-coded string, so a fixture build never claims to be showing TMDB data. The footer carries the notice and links to themoviedb.org.

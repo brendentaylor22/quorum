@@ -36,4 +36,4 @@ of the application using it. Concretely, in Quorum:
   fixture-only instance shows no TMDB branding, because it uses no TMDB data.
 
 This asset is TMDB's property and is not covered by Quorum's AGPL licence.
-See [docs/phase-0/tmdb-use-review.md](../../../../docs/phase-0/tmdb-use-review.md).
+See [docs/tmdb-use-review.md](../../../../docs/tmdb-use-review.md).

@@ -48,11 +48,11 @@ score = w · mean(predictions) + (1 − w) · min(predictions)
 
 `@quorum/recommend` is pure: no I/O, no provider, no persistence. Items arrive described only by opaque namespaced tags such as `genre:28`. It does not know what a genre is.
 
-Everything that decides _what a movie looks like_ lives in one file, [`apps/api/src/catalog/features.ts`](../../apps/api/src/catalog/features.ts). That is deliberate, and it matters for the open question below: narrowing or replacing the feature set is a change to that file alone.
+Everything that decides _what a movie looks like_ lives in one file, [`apps/api/src/catalog/features.ts`](../apps/api/src/catalog/features.ts). That is deliberate, and it matters for the open question below: narrowing or replacing the feature set is a change to that file alone.
 
 ## Open question: TMDB's ML/AI restriction
 
-[`docs/phase-0/tmdb-use-review.md`](../phase-0/tmdb-use-review.md) records that TMDB's terms **prohibit ML/AI use of their content**.
+[`docs/tmdb-use-review.md`](tmdb-use-review.md) records that TMDB's terms **prohibit ML/AI use of their content**.
 
 Genres and keywords in the current feature set are TMDB-derived. Whether tag-counting of this kind falls inside that prohibition is a real question and needs an answer from the current terms, not from inference. It has not been resolved.
 

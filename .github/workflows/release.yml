@@ -146,9 +146,8 @@ jobs:
           cp deploy/secrets/README.md "$bundle_root/deploy/secrets/README.md"
           cp scripts/quorumctl "$bundle_root/scripts/quorumctl"
           chmod 0755 "$bundle_root/scripts/quorumctl"
-          cp docs/phase-1/operator-runbook.md "$bundle_root/docs/operator-runbook.md"
-          cp docs/phase-1/release-runbook.md "$bundle_root/docs/release-runbook.md"
-          cp docs/phase-1/rollback-runbook.md "$bundle_root/docs/rollback-runbook.md"
+          cp docs/operations.md "$bundle_root/docs/operations.md"
+          cp docs/releasing.md "$bundle_root/docs/releasing.md"
           # A self-installer gets the guide written for them, plus the licence
           # the AGPL requires travel with every distributed copy.
           cp docs/self-hosting.md "$bundle_root/docs/self-hosting.md"

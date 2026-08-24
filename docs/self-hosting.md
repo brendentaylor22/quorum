@@ -1,7 +1,5 @@
 # Self-hosting Quorum
 
-Updated: 2026-08-17
-
 Quorum is one container, one SQLite file, and no external service at request
 time. This is what it takes to run your own.
 
@@ -19,7 +17,7 @@ fixture catalog so a fresh install is playable immediately.
 - **Movie data is not Quorum's to give you.** If you import a real catalog you
   register your own TMDB account and accept TMDB's terms directly, including
   their non-commercial restriction and their six-month cache limit. See
-  [TMDB use review](phase-0/tmdb-use-review.md).
+  [TMDB use review](tmdb-use-review.md).
 - **You are the operator.** Quorum ships hardened defaults, but the token
   secret, the backups, TLS, and the update cadence are yours. See
   [SECURITY.md](../SECURITY.md).
@@ -519,7 +517,7 @@ unaffected.
 Re-run it every few months. `doctor` and `catalog-status` exit non-zero once the
 catalog passes TMDB's six-month cache limit, so staleness fails loudly rather
 than quietly breaching the provider's terms. Tuning:
-[catalog ingestion](phase-4/catalog-ingestion.md#configuration).
+[catalog ingestion](catalog-ingestion.md#configuration).
 
 ## 6. Operate it
 

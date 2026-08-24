@@ -7,7 +7,7 @@ import type { RoomService } from './rooms/service.js';
  * Expiry used to happen only on an API request, which meant a quiet instance
  * kept expired rooms — and their participants, exposures, and interactions —
  * on disk indefinitely. The retention policy in
- * `docs/phase-0/retention-and-abuse.md` promises otherwise, and a promise that
+ * `docs/retention-and-abuse.md` promises otherwise, and a promise that
  * only holds while someone is using the service is not one worth printing.
  *
  * Lazy expiry stays as well: it is what guarantees a capability presented one

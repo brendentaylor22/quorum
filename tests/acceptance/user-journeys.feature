@@ -1,5 +1,5 @@
-Feature: Phase 0 user journeys
-  Contract scenarios remain normative until automated against implementation.
+Feature: User journeys
+  Contract scenarios. Normative: the implementation is expected to match these.
 
   Background:
     Given every started room has exactly 20 persisted movies

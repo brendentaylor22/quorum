@@ -235,7 +235,7 @@ function replaceLinks(
 /**
  * TMDB's terms cap how long their content may be cached. Beyond this the
  * catalog must be refreshed or purged, so it is a retention deadline rather
- * than a tuning knob. See `docs/phase-0/tmdb-use-review.md`.
+ * than a tuning knob. See `docs/tmdb-use-review.md`.
  */
 export const TMDB_CACHE_MAX_DAYS = 180;
 

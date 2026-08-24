@@ -11,13 +11,14 @@ Open an issue first for anything beyond a bug fix or a typo. Quorum has a
 written product contract and threat model, and the fastest way to waste an
 afternoon is to build something the contract already rules out:
 
-- [Product contract](docs/phase-0/product-contract.md) — normative invariants
-- [Threat model](docs/phase-0/threat-model.md)
-- [Implementation plan](QUORUM_IMPLEMENTATION_PLAN.md) — phases and what is
-  deliberately deferred
+- [Product contract](docs/product-contract.md) — normative invariants
+- [Threat model](docs/threat-model.md)
+- [Retention and abuse policy](docs/retention-and-abuse.md)
 
-Things that are deferred rather than forgotten: accounts, series, streaming
-provider filters, WebSockets, PWA, collaborative filtering. The plan says why.
+Deferred rather than forgotten: accounts, series, streaming-provider filters,
+WebSockets, PWA, and collaborative filtering. The last of those is argued out in
+[group recommendations](docs/recommendations.md); the rest are scope, not
+principle, and an issue is the place to make the case.
 
 ## Local setup
 
@@ -28,7 +29,7 @@ npm ci
 npm run dev
 ```
 
-Open <http://localhost:5173>. A fresh checkout falls back to a 20-movie fixture
+Open <http://localhost:5173>. A fresh checkout falls back to a 60-movie fixture
 catalog, so no TMDB credential is needed to work on anything except the
 importer.
 
@@ -71,8 +72,8 @@ Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`), imperative subject.
 Say what changed and why; the diff already shows how.
 
 Keep pull requests to one concern. If a change alters a documented invariant,
-update the document in the same pull request — the docs in `docs/` are
-evidence, not decoration.
+update the document in the same pull request — the contracts in `docs/` are
+normative, not decoration.
 
 ## Licence
 

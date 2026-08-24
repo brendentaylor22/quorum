@@ -9,7 +9,7 @@ export const SLATE_SIZE = 20;
  * ranked lives in `listSlateCandidateIds`.
  */
 export const SLATE_CANDIDATE_POOL_SIZE = 500;
-/** Hard cap from `docs/phase-0/retention-and-abuse.md`. */
+/** Hard cap from `docs/retention-and-abuse.md`. */
 export const MAX_PARTICIPANTS_PER_ROOM = 20;
 export const DISPLAY_NAME_MAX_LENGTH = 40;
 

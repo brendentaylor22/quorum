@@ -1,7 +1,7 @@
 # Security policy
 
 Quorum is a self-hosted application handling anonymous votes behind capability
-links. Its threat model is written down: [docs/phase-0/threat-model.md](docs/phase-0/threat-model.md).
+links. Its threat model is written down: [docs/threat-model.md](docs/threat-model.md).
 
 ## Reporting a vulnerability
 
@@ -74,5 +74,7 @@ Quorum's defaults are safe, but a self-hosted deployment is yours to run:
 - Never publish a database backup. It contains bulk TMDB metadata as well as
   room data.
 
-See [docs/phase-1/operator-runbook.md](docs/phase-1/operator-runbook.md) and
-[docs/self-hosting.md](docs/self-hosting.md).
+See [docs/self-hosting.md](docs/self-hosting.md) for the install and
+[docs/operations.md](docs/operations.md) for backups, upgrades, and rollback.
+How dependency and image findings are handled:
+[docs/dependency-policy.md](docs/dependency-policy.md).

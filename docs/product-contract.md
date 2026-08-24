@@ -1,7 +1,5 @@
 # Product contract
 
-Updated: 2026-08-11
-
 ## Actors and capabilities
 
 - Host creates room. Server returns separate invite and host-control URLs.
@@ -34,13 +32,13 @@ Updated: 2026-08-11
 
 Allowed transitions:
 
-| From | Event | To | Required effect |
-|---|---|---|---|
-| LOBBY | host starts | VOTING | Freeze members and exact 20-item slate atomically |
-| LOBBY | host expires | EXPIRED | Revoke capabilities; schedule purge |
-| VOTING | all participants finish | COMPLETE | Set completion timestamp; reveal canonical results |
-| VOTING | host closes | COMPLETE | Preserve non-responses; reveal canonical results |
-| COMPLETE | retention expires | EXPIRED | Revoke capabilities; purge on schedule |
+| From     | Event                   | To       | Required effect                                    |
+| -------- | ----------------------- | -------- | -------------------------------------------------- |
+| LOBBY    | host starts             | VOTING   | Freeze members and exact 20-item slate atomically  |
+| LOBBY    | host expires            | EXPIRED  | Revoke capabilities; schedule purge                |
+| VOTING   | all participants finish | COMPLETE | Set completion timestamp; reveal canonical results |
+| VOTING   | host closes             | COMPLETE | Preserve non-responses; reveal canonical results   |
+| COMPLETE | retention expires       | EXPIRED  | Revoke capabilities; purge on schedule             |
 
 No reverse transition exists. Invalid transition returns uniform conflict response without leaking room state to unauthorized callers.
 
@@ -63,7 +61,7 @@ Sort by approval percentage descending, then response coverage descending. Equal
 
 Percentages display as whole numbers in MVP. Exact numerator and denominator always display beside percentage, avoiding rounding ambiguity. Non-response remains denominator after early close.
 
-[Machine-readable examples](../../tests/contracts/ranking.examples.json) are normative. If prose and examples conflict, phase decision must update both in one change.
+[Machine-readable examples](../tests/contracts/ranking.examples.json) are normative. If prose and examples conflict, one change must update both.
 
 ## Completion and reconnect
 
@@ -79,4 +77,3 @@ Percentages display as whole numbers in MVP. Exact numerator and denominator alw
 - Keyboard: `ArrowLeft` selects No, `ArrowRight` selects Yes; confirmation semantics match buttons.
 - Focus order, labels, status announcements, contrast, and reduced-motion behavior do not depend on gesture support.
 - Destructive host actions require explicit confirmation and remain separate from participant controls.
-

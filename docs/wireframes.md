@@ -1,8 +1,11 @@
 # Mobile-first wireframes
 
-Updated: 2026-08-11
-
-Wireframes define information and action hierarchy, not visual style.
+Wireframes define information and action hierarchy, not visual style. They are
+the original sketches, kept because they record what each screen owes the
+person reading it; where the built product diverged, the code is the decision.
+The one divergence worth naming is Progress below: rather than a screen of its
+own to navigate to, per-participant progress became bars on the roster, inside
+the screen people are already looking at.
 
 ## Create
 
@@ -70,7 +73,7 @@ Control disables while confirmation is in flight. Failure leaves same card visib
 │ You're done: 20 of 20 ✓  │
 │                          │
 │ Group progress           │
-│ Brenden       20 / 20 ✓  │
+│ Ali           20 / 20 ✓  │
 │ Sam           20 / 20 ✓  │
 │ Jo            16 / 20    │
 │                          │
@@ -104,4 +107,3 @@ Progress exposes counts, never per-movie choices or interim scores.
 ```
 
 Early-close banner states incomplete voting. Shared ties show same rank. Solo banner explains result is personal shortlist.
-

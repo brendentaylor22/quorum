@@ -21,7 +21,7 @@ export type CatalogEnvironment = Record<string, string | undefined>;
  * Read the TMDB read access token from a file.
  *
  * A file keeps the credential out of the process table and out of
- * `docker inspect`; `docs/phase-0/tmdb-use-review.md` requires exactly this in
+ * `docker inspect`; `docs/tmdb-use-review.md` requires exactly this in
  * production. The inline variable exists for local development only.
  */
 export function readTmdbToken(
