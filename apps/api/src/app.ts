@@ -12,6 +12,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveTokenSecret } from './capabilities.js';
+import { instanceInfo, operatorHostname } from './instance.js';
 import { loggerOptions } from './logging.js';
 import { RateLimiter, resolveScale } from './rate-limit.js';
 import { startRetentionSweep } from './retention.js';
@@ -41,20 +42,33 @@ export interface BuildAppOptions {
  * busy room locks out the rest. Turned on without a trusted proxy in front, a
  * caller sets the header themselves and every limit becomes decorative.
  *
- * So it is explicit, and defaults to off: `QUORUM_TRUST_PROXY` takes `true`,
- * a hop count, or a comma-separated list of trusted proxy addresses or CIDRs,
- * which is the form an operator should prefer. Threat model T05 and the
- * "source identity cannot be trusted" stop condition.
+ * So it is explicit, and defaults to off: `QUORUM_TRUST_PROXY` takes `true`
+ * or a comma-separated list of trusted proxy addresses or CIDRs, which is the
+ * form an operator should prefer. Threat model T05 and the "source identity
+ * cannot be trusted" stop condition.
+ *
+ * A hop count used to be accepted and no longer is. Counting hops cannot
+ * identify the immediate peer, so a direct caller could supply enough forwarded
+ * hops of their own to be believed — GHSA-3m5p-2c4r-xxw2, fixed in Fastify
+ * 5.12.1, which now ignores a numeric setting and trusts nobody. Ignoring it
+ * here too keeps that outcome, and `warnTrustProxy` says so at boot rather than
+ * leaving an operator with one rate-limit bucket for the whole Internet and no
+ * hint as to why.
  */
 export function resolveTrustProxy(
   environment: NodeJS.ProcessEnv = process.env,
-): boolean | number | string[] {
+): boolean | string[] {
   const raw = environment.QUORUM_TRUST_PROXY?.trim();
   if (raw === undefined || raw === '' || raw === 'false') return false;
   if (raw === 'true') return true;
-  const hops = Number(raw);
-  if (Number.isInteger(hops) && hops > 0) return hops;
+  if (isHopCount(raw)) return false;
   return raw.split(',').map((entry) => entry.trim());
+}
+
+/** A bare positive integer, which is what a hop count looked like. */
+function isHopCount(raw: string): boolean {
+  const hops = Number(raw);
+  return Number.isInteger(hops) && hops > 0;
 }
 
 export async function buildApp(
@@ -92,6 +106,36 @@ export async function buildApp(
   registerSecurityHeaders(app, {
     imageBaseUrl: service.catalogImageBaseUrl(),
   });
+
+  // Silent otherwise: Fastify would simply trust nobody, every request would
+  // carry the proxy's address, and the whole Internet would share one
+  // rate-limit bucket. That looks like Quorum locking people out at random.
+  const configuredTrustProxy = process.env.QUORUM_TRUST_PROXY?.trim();
+  if (configuredTrustProxy !== undefined && isHopCount(configuredTrustProxy)) {
+    app.log.warn(
+      'QUORUM_TRUST_PROXY is a hop count, which is no longer honoured: a ' +
+        'count cannot identify the peer, so a direct caller could forge ' +
+        'enough hops to be believed. Nothing is trusted, and every caller ' +
+        'now shares one rate-limit bucket. Name the proxy addresses or ' +
+        'CIDRs instead, or use `true`.',
+    );
+  }
+
+  // An operator hostname without a public URL still works, and the room it
+  // creates is unreachable in the way that matters: the invite link carries
+  // the protected hostname, so the first thing a friend meets is a login page
+  // for an identity provider they have no account with. Nothing fails, which
+  // is exactly why it is worth saying out loud at boot.
+  if (
+    operatorHostname() !== undefined &&
+    instanceInfo(process.env, operatorHostname()).publicUrl === undefined
+  ) {
+    app.log.warn(
+      'QUORUM_OPERATOR_HOSTNAME is set without a usable QUORUM_PUBLIC_URL: ' +
+        'rooms created there will hand out invite links on the protected ' +
+        'hostname, which the people you invite cannot open.',
+    );
+  }
 
   // Lazy expiry on request still applies, so a capability presented one second
   // after expiry is refused without waiting for a sweep. This is what makes the

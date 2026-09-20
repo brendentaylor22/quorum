@@ -281,6 +281,17 @@ export const instanceInfoSchema = z.object({
    * anyone can learn the same thing by pressing the button.
    */
   roomCreation: roomCreationModeSchema,
+  /**
+   * Where rooms are played, when that is not where this page was loaded.
+   *
+   * Only present on an operator hostname — the protected second name a proxy
+   * guards, where the create button lives. Every link a room produces has to
+   * point at the public hostname instead: an invite on the protected name
+   * would ask friends for credentials they do not have, and a host session
+   * would be a cookie on the wrong origin. The client sends the new host
+   * straight there.
+   */
+  publicUrl: z.url().optional(),
 });
 export type InstanceInfo = z.infer<typeof instanceInfoSchema>;
 

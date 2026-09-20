@@ -23,7 +23,13 @@ imports directly; this table is the map, not the contract.
 | GET    | `/api/rooms/:roomId/results`     | participant session or host capability  |
 
 `POST /api/rooms` answers `403` when `QUORUM_ROOM_CREATION` is not `public`;
-rooms are then minted with the `create-room` CLI command instead.
+rooms are then minted with the `create-room` CLI command instead — or on
+`QUORUM_OPERATOR_HOSTNAME`, a second hostname the operator has put an identity
+proxy in front of, where the endpoint still answers. The decision reads the
+literal `Host` header and never `X-Forwarded-Host`, which a client controls.
+`GET /api/instance` answers for the same hostname, so `roomCreation` describes
+the door that was knocked on, and carries `publicUrl` on an operator hostname
+so the client can send a new host to the hostname its guests can reach.
 `/continue` opens the next round from a completed room.
 
 ## Unauthenticated
