@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildApp } from './app.js';
+import { buildApp, resolveTrustProxy } from './app.js';
 
 const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 
@@ -226,6 +226,49 @@ describe('operator-only room creation', () => {
       headers: { host: 'start.quorum.example.org' },
     });
     expect(open.json<InstanceInfo>().roomCreation).toBe('public');
+  });
+});
+
+describe('resolveTrustProxy', () => {
+  it('defaults to trusting nobody', () => {
+    expect(resolveTrustProxy({})).toBe(false);
+    expect(resolveTrustProxy({ QUORUM_TRUST_PROXY: '' })).toBe(false);
+    expect(resolveTrustProxy({ QUORUM_TRUST_PROXY: 'false' })).toBe(false);
+  });
+
+  it('takes `true` and a list of addresses', () => {
+    expect(resolveTrustProxy({ QUORUM_TRUST_PROXY: 'true' })).toBe(true);
+    expect(
+      resolveTrustProxy({ QUORUM_TRUST_PROXY: '172.16.0.0/12, 10.0.0.1' }),
+    ).toEqual(['172.16.0.0/12', '10.0.0.1']);
+  });
+
+  it('refuses a hop count rather than pretending to honour it', () => {
+    // GHSA-3m5p-2c4r-xxw2: a count cannot identify the peer, so a direct
+    // caller can forge enough hops to be believed. Fastify ignores a number
+    // now; passing one through would only hide that from the operator.
+    expect(resolveTrustProxy({ QUORUM_TRUST_PROXY: '1' })).toBe(false);
+    expect(resolveTrustProxy({ QUORUM_TRUST_PROXY: ' 2 ' })).toBe(false);
+  });
+
+  it('warns at boot about a hop count, because nothing else would', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-hops-'));
+    const lines: string[] = [];
+    vi.stubEnv('QUORUM_TRUST_PROXY', '1');
+    const app = await buildApp({
+      databasePath: join(directory, 'quorum.db'),
+      staticDirectory: join(directory, 'missing'),
+      logger: true,
+      logDestination: new Writable({
+        write(chunk: Buffer, _encoding, callback) {
+          lines.push(chunk.toString());
+          callback();
+        },
+      }),
+    });
+    apps.push(app);
+
+    expect(lines.join('')).toContain('QUORUM_TRUST_PROXY');
   });
 });
 

@@ -405,9 +405,16 @@ either direction:
 - **Turned on with no trusted proxy in front**, a caller sets `X-Forwarded-For`
   themselves and every limit becomes decorative.
 
-So it defaults to off, and you set it deliberately. It accepts `true`, a hop
-count, or — best — a comma-separated list of addresses or CIDRs you actually
-trust.
+So it defaults to off, and you set it deliberately. It accepts `true` or —
+best — a comma-separated list of addresses or CIDRs you actually trust.
+
+A hop count is no longer accepted. Counting hops cannot identify the peer that
+actually connected, so a caller reaching the origin directly could supply
+enough forwarded hops of their own to be believed
+([GHSA-3m5p-2c4r-xxw2](https://github.com/advisories/GHSA-3m5p-2c4r-xxw2)).
+A numeric setting is ignored and nothing is trusted — which means one
+rate-limit bucket for every caller, so Quorum warns about it in the log at
+boot. Name the addresses instead.
 
 ## 4. Decide who may start a room
 
@@ -679,7 +686,7 @@ in production, by either `QUORUM_TOKEN_SECRET_FILE` or `QUORUM_TOKEN_SECRET`.
 | `QUORUM_ROOM_CREATION`           | `public`           | `operator` closes `POST /api/rooms`, leaving `create-room` on the CLI as the only way to start one. Any unrecognised value reads as `operator`, so a typo cannot fail open.                                                               |
 | `QUORUM_OPERATOR_HOSTNAME`       | —                  | A second public hostname, routed to the same container, where `QUORUM_ROOM_CREATION=operator` does not close room creation. Compared against the literal `Host` header. Only as safe as the identity proxy you put in front of that name. |
 | `QUORUM_PUBLIC_URL`              | —                  | Origin used to print whole links from `create-room`, and to send a room created on `QUORUM_OPERATOR_HOSTNAME` back to the hostname friends can open. Otherwise never used to build a link at request time.                                |
-| `QUORUM_TRUST_PROXY`             | off                | Whose `X-Forwarded-For` to believe: `true`, a hop count, or a list of addresses/CIDRs. See "Trusting the proxy".                                                                                                                          |
+| `QUORUM_TRUST_PROXY`             | off                | Whose `X-Forwarded-For` to believe: `true`, or a list of addresses/CIDRs. A hop count is ignored and warned about. See "Trusting the proxy".                                                                                              |
 | `QUORUM_RATE_LIMIT_SCALE`        | `1`                | Multiplies every rate limit. Raise behind a large shared address; `0` disables limiting entirely and is only defensible on a trusted private network.                                                                                     |
 | `QUORUM_RETENTION_SWEEP_MINUTES` | `15`               | How often expiry and purge run.                                                                                                                                                                                                           |
 | `QUORUM_ALLOW_INSECURE_COOKIES`  | off                | Drops `Secure` from cookies for plain-HTTP localhost. Ignored when `NODE_ENV=production`.                                                                                                                                                 |
