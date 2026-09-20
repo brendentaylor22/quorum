@@ -110,7 +110,10 @@ export function App() {
       ) : route === 'host' && token !== undefined ? (
         <HostScreen hostToken={token} />
       ) : (
-        <CreateScreen roomCreation={roomCreation} />
+        <CreateScreen
+          roomCreation={roomCreation}
+          publicUrl={instance?.publicUrl ?? null}
+        />
       )}
       <footer>
         <CatalogNotice source={catalog} />
