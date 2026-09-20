@@ -173,6 +173,106 @@ describe('operator-only room creation', () => {
     });
     expect(second.statusCode).toBe(409);
   });
+
+  it('opens creation on the operator hostname only, never on a forwarded one', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-operator-host-'));
+    // Trusting a proxy is what every proxied deployment does, and it is what
+    // makes this test worth having: Fastify would resolve `request.hostname`
+    // from `X-Forwarded-Host`, which a caller on the public hostname controls.
+    vi.stubEnv('QUORUM_TRUST_PROXY', 'true');
+    vi.stubEnv('QUORUM_ROOM_CREATION', 'operator');
+    vi.stubEnv('QUORUM_OPERATOR_HOSTNAME', 'start.quorum.example.org');
+    const app = await buildApp({
+      databasePath: join(directory, 'quorum.db'),
+      staticDirectory: join(directory, 'missing'),
+    });
+    apps.push(app);
+
+    const create = async (headers: Record<string, string>) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/rooms',
+        headers: { [REQUEST_HEADER]: '1', ...headers },
+      });
+
+    // The hostname friends were sent. Closed, as it was before.
+    expect((await create({ host: 'quorum.example.org' })).statusCode).toBe(403);
+
+    // The same hostname, now claiming to be the protected one. The identity
+    // proxy sits in front of `start.`, so believing this header would hand
+    // room creation to anyone who can type it.
+    const spoofed = await create({
+      host: 'quorum.example.org',
+      'x-forwarded-host': 'start.quorum.example.org',
+    });
+    expect(spoofed.statusCode).toBe(403);
+    expect(spoofed.json<ErrorResponse>().error).toBe('room_creation_disabled');
+
+    // Addressed to the protected hostname, which means it came through the
+    // proxy guarding it.
+    const allowed = await create({ host: 'start.quorum.example.org' });
+    expect(allowed.statusCode).toBe(201);
+
+    // And the landing page agrees with the door, per hostname.
+    const closed = await app.inject({
+      method: 'GET',
+      url: '/api/instance',
+      headers: { host: 'quorum.example.org' },
+    });
+    expect(closed.json<InstanceInfo>().roomCreation).toBe('operator');
+    const open = await app.inject({
+      method: 'GET',
+      url: '/api/instance',
+      headers: { host: 'start.quorum.example.org' },
+    });
+    expect(open.json<InstanceInfo>().roomCreation).toBe('public');
+  });
+});
+
+describe('operator hostname configuration', () => {
+  it('warns at boot when its links would point where nobody can follow', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-operator-warn-'));
+    const lines: string[] = [];
+    vi.stubEnv('QUORUM_ROOM_CREATION', 'operator');
+    vi.stubEnv('QUORUM_OPERATOR_HOSTNAME', 'start.quorum.example.org');
+    vi.stubEnv('QUORUM_PUBLIC_URL', '');
+    const app = await buildApp({
+      databasePath: join(directory, 'quorum.db'),
+      staticDirectory: join(directory, 'missing'),
+      logger: true,
+      logDestination: new Writable({
+        write(chunk: Buffer, _encoding, callback) {
+          lines.push(chunk.toString());
+          callback();
+        },
+      }),
+    });
+    apps.push(app);
+
+    expect(lines.join('')).toContain('QUORUM_OPERATOR_HOSTNAME');
+  });
+
+  it('stays quiet once the public URL is set', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'quorum-operator-quiet-'));
+    const lines: string[] = [];
+    vi.stubEnv('QUORUM_ROOM_CREATION', 'operator');
+    vi.stubEnv('QUORUM_OPERATOR_HOSTNAME', 'start.quorum.example.org');
+    vi.stubEnv('QUORUM_PUBLIC_URL', 'https://quorum.example.org');
+    const app = await buildApp({
+      databasePath: join(directory, 'quorum.db'),
+      staticDirectory: join(directory, 'missing'),
+      logger: true,
+      logDestination: new Writable({
+        write(chunk: Buffer, _encoding, callback) {
+          lines.push(chunk.toString());
+          callback();
+        },
+      }),
+    });
+    apps.push(app);
+
+    expect(lines.join('')).not.toContain('QUORUM_OPERATOR_HOSTNAME');
+  });
 });
 
 describe('host claim', () => {

@@ -12,6 +12,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveTokenSecret } from './capabilities.js';
+import { instanceInfo, operatorHostname } from './instance.js';
 import { loggerOptions } from './logging.js';
 import { RateLimiter, resolveScale } from './rate-limit.js';
 import { startRetentionSweep } from './retention.js';
@@ -92,6 +93,22 @@ export async function buildApp(
   registerSecurityHeaders(app, {
     imageBaseUrl: service.catalogImageBaseUrl(),
   });
+
+  // An operator hostname without a public URL still works, and the room it
+  // creates is unreachable in the way that matters: the invite link carries
+  // the protected hostname, so the first thing a friend meets is a login page
+  // for an identity provider they have no account with. Nothing fails, which
+  // is exactly why it is worth saying out loud at boot.
+  if (
+    operatorHostname() !== undefined &&
+    instanceInfo(process.env, operatorHostname()).publicUrl === undefined
+  ) {
+    app.log.warn(
+      'QUORUM_OPERATOR_HOSTNAME is set without a usable QUORUM_PUBLIC_URL: ' +
+        'rooms created there will hand out invite links on the protected ' +
+        'hostname, which the people you invite cannot open.',
+    );
+  }
 
   // Lazy expiry on request still applies, so a capability presented one second
   // after expiry is refused without waiting for a sweep. This is what makes the

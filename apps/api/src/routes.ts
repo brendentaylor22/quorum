@@ -68,6 +68,27 @@ function requireSameOrigin(request: FastifyRequest): void {
 }
 
 /**
+ * The hostname this request was addressed to, for `QUORUM_OPERATOR_HOSTNAME`.
+ *
+ * Deliberately the literal `Host` header and never `request.hostname`. With
+ * `QUORUM_TRUST_PROXY` set — which every proxied deployment sets — Fastify
+ * resolves `request.hostname` from `X-Forwarded-Host` when the connection came
+ * from a trusted proxy. A proxy that forwards a client's headers verbatim, as
+ * `cloudflared` does, would then let anyone on the public hostname claim the
+ * operator's one by sending that header themselves, and room creation would be
+ * open to the Internet through the setting that exists to close it.
+ *
+ * `Host` cannot be borrowed that way: it is what the request was routed on, so
+ * presenting the operator hostname means having passed whatever guards it.
+ *
+ * `requireSameOrigin` compares against the same header for the same reason.
+ */
+function requestHostname(request: FastifyRequest): string | undefined {
+  const value = request.headers.host;
+  return value === undefined || value === '' ? undefined : value;
+}
+
+/**
  * An opaque, stable bucket id for a secret. Truncated because this only has to
  * separate honest callers from each other, never to authenticate anyone.
  */
@@ -236,8 +257,15 @@ export function registerRoomRoutes(
    * What this instance is: its licence and where its source lives. Public and
    * unauthenticated, because the AGPL's offer of source is owed to anyone
    * interacting with it, including someone who never joins a room.
+   *
+   * `roomCreation` answers for the hostname that asked, so the landing page
+   * served on an operator hostname renders the create button and the same page
+   * on the public one renders the invitation-only notice. It is policy, not a
+   * secret: it says what this door does, never who may open it.
    */
-  app.get('/api/instance', () => instanceInfo());
+  app.get('/api/instance', (request) =>
+    instanceInfo(process.env, requestHostname(request)),
+  );
 
   app.post('/api/rooms', (request, reply) => {
     requireSameOrigin(request);
@@ -245,7 +273,9 @@ export function registerRoomRoutes(
     // endpoint is not a scarce resource being protected, it is not a resource
     // at all, and a bot hammering it should not be able to exhaust the bucket
     // that the operator's own CLI-minted rooms are unaffected by anyway.
-    if (roomCreationMode() === 'operator') {
+    if (
+      roomCreationMode(process.env, requestHostname(request)) === 'operator'
+    ) {
       throw new ApiError(
         403,
         'room_creation_disabled',

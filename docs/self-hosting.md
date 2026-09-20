@@ -472,8 +472,74 @@ Two alternatives, and why they are not the default:
   friend a long-lived secret to leak, for less protection than closing the
   endpoint outright.
 - **Authentication at the ingress** (basic auth, Cloudflare Access) is a
-  stronger wall and costs the property worth keeping: friends would need
-  credentials before they could tap a link.
+  stronger wall, and across the whole hostname it costs the property worth
+  keeping: friends would need credentials before they could tap a link. Across
+  a _second_ hostname it costs nothing, which is the next section.
+
+### Getting the button back, on a hostname only you can reach
+
+A shell is a poor place to start a Friday night. `QUORUM_OPERATOR_HOSTNAME`
+names a second public hostname, routed to the same container, on which
+`operator` does not apply:
+
+```sh
+QUORUM_ROOM_CREATION=operator
+QUORUM_OPERATOR_HOSTNAME=start.quorum.example.org
+QUORUM_PUBLIC_URL=https://quorum.example.org
+```
+
+`quorum.example.org` stays exactly as it was — invitation-only, no button, open
+to anyone holding a link. `start.quorum.example.org` serves the same
+application with the create button working. You put an identity proxy in front
+of that second name, and only that name.
+
+**Quorum authenticates nobody here.** It compares a hostname. The wall is
+entirely whatever you place in front of it, and this setting is only what keeps
+the public hostname closed while the protected one works. If the proxy is
+missing or misconfigured, room creation is open to anyone who types the name —
+so treat it as you would an admin panel, and use a hostname you would not
+publish.
+
+What it compares is the literal `Host` header, never `X-Forwarded-Host`. With
+`QUORUM_TRUST_PROXY` set — which every deployment here sets — a forwarded
+hostname is something the _client_ can send, and a proxy that passes client
+headers through would otherwise let anyone on the public hostname claim the
+protected one. `Host` is what the request was routed on, so presenting it means
+having passed whatever guards that route.
+
+Creating a room on the protected hostname sends you straight to
+`https://quorum.example.org/host/<token>` — which is why `QUORUM_PUBLIC_URL` is
+not optional here. The host session and every link the room shows then belong
+to the hostname your friends can open. Set it wrong, or leave it unset, and you
+will be sharing invite links into your own login wall.
+
+#### With Cloudflare Access
+
+If you are on [Option C](#option-c--cloudflare-tunnel-no-open-inbound-port),
+this is dashboard work and one `.env` line — no new container.
+
+1. **Route the hostname.** In Zero Trust → Networks → Tunnels, open the tunnel,
+   and add a public hostname `start.quorum.example.org` pointing at the same
+   service as the first (`http://quorum:3000`). For a locally-managed tunnel,
+   add a second `- hostname:` entry to `cloudflared/config.yml` instead.
+2. **Add an Access application.** Zero Trust → Access → Applications → Add →
+   Self-hosted, on `start.quorum.example.org` with an empty path, so the
+   application covers the whole hostname.
+3. **Add the identity provider.** Google, under Settings → Authentication.
+   Cloudflare's own docs cover the OAuth client; you need the client ID and
+   secret from a Google Cloud project.
+4. **Write the policy.** Action `Allow`, rule `Emails` → your Google address.
+   Not `Emails ending in @gmail.com`, which is every Gmail account alive.
+5. **Leave the public hostname alone.** No Access application on it, or friends
+   meet a login page.
+
+Scope the application to the hostname, never to a path on the shared one.
+Access matches a path as a prefix and cannot see the HTTP method, so an
+application on `/api/rooms` would also swallow `/api/rooms/<id>/swipe` and
+every other call a participant makes.
+
+A session lasts as long as the application's session duration, so signing in is
+something you do occasionally, not every Friday.
 
 ## Running alongside other services
 
@@ -605,18 +671,19 @@ in production, by either `QUORUM_TOKEN_SECRET_FILE` or `QUORUM_TOKEN_SECRET`.
 
 ### Application
 
-| Variable                         | Default            | What it does                                                                                                                                                                   |
-| -------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `QUORUM_TOKEN_SECRET_FILE`       | —                  | File holding the key for every capability hash. Mandatory in production; preferred over the variable below because a file stays out of the process table and `docker inspect`. |
-| `QUORUM_TOKEN_SECRET`            | —                  | The key itself, at least 32 characters. Works in production, but prefer the file above: an environment variable is visible in the process table and in `docker inspect`.       |
-| `QUORUM_DATABASE_PATH`           | `/data/quorum.db`  | SQLite file.                                                                                                                                                                   |
-| `QUORUM_ROOM_CREATION`           | `public`           | `operator` closes `POST /api/rooms`, leaving `create-room` on the CLI as the only way to start one. Any unrecognised value reads as `operator`, so a typo cannot fail open.    |
-| `QUORUM_PUBLIC_URL`              | —                  | Origin used only to print whole links from `create-room`. Never used to build a link at request time.                                                                          |
-| `QUORUM_TRUST_PROXY`             | off                | Whose `X-Forwarded-For` to believe: `true`, a hop count, or a list of addresses/CIDRs. See "Trusting the proxy".                                                               |
-| `QUORUM_RATE_LIMIT_SCALE`        | `1`                | Multiplies every rate limit. Raise behind a large shared address; `0` disables limiting entirely and is only defensible on a trusted private network.                          |
-| `QUORUM_RETENTION_SWEEP_MINUTES` | `15`               | How often expiry and purge run.                                                                                                                                                |
-| `QUORUM_ALLOW_INSECURE_COOKIES`  | off                | Drops `Secure` from cookies for plain-HTTP localhost. Ignored when `NODE_ENV=production`.                                                                                      |
-| `PORT` / `HOST`                  | `3000` / `0.0.0.0` | Listener. Inside the container this needs no changing.                                                                                                                         |
+| Variable                         | Default            | What it does                                                                                                                                                                                                                              |
+| -------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QUORUM_TOKEN_SECRET_FILE`       | —                  | File holding the key for every capability hash. Mandatory in production; preferred over the variable below because a file stays out of the process table and `docker inspect`.                                                            |
+| `QUORUM_TOKEN_SECRET`            | —                  | The key itself, at least 32 characters. Works in production, but prefer the file above: an environment variable is visible in the process table and in `docker inspect`.                                                                  |
+| `QUORUM_DATABASE_PATH`           | `/data/quorum.db`  | SQLite file.                                                                                                                                                                                                                              |
+| `QUORUM_ROOM_CREATION`           | `public`           | `operator` closes `POST /api/rooms`, leaving `create-room` on the CLI as the only way to start one. Any unrecognised value reads as `operator`, so a typo cannot fail open.                                                               |
+| `QUORUM_OPERATOR_HOSTNAME`       | —                  | A second public hostname, routed to the same container, where `QUORUM_ROOM_CREATION=operator` does not close room creation. Compared against the literal `Host` header. Only as safe as the identity proxy you put in front of that name. |
+| `QUORUM_PUBLIC_URL`              | —                  | Origin used to print whole links from `create-room`, and to send a room created on `QUORUM_OPERATOR_HOSTNAME` back to the hostname friends can open. Otherwise never used to build a link at request time.                                |
+| `QUORUM_TRUST_PROXY`             | off                | Whose `X-Forwarded-For` to believe: `true`, a hop count, or a list of addresses/CIDRs. See "Trusting the proxy".                                                                                                                          |
+| `QUORUM_RATE_LIMIT_SCALE`        | `1`                | Multiplies every rate limit. Raise behind a large shared address; `0` disables limiting entirely and is only defensible on a trusted private network.                                                                                     |
+| `QUORUM_RETENTION_SWEEP_MINUTES` | `15`               | How often expiry and purge run.                                                                                                                                                                                                           |
+| `QUORUM_ALLOW_INSECURE_COOKIES`  | off                | Drops `Secure` from cookies for plain-HTTP localhost. Ignored when `NODE_ENV=production`.                                                                                                                                                 |
+| `PORT` / `HOST`                  | `3000` / `0.0.0.0` | Listener. Inside the container this needs no changing.                                                                                                                                                                                    |
 
 ### Catalog import
 
@@ -668,6 +735,18 @@ behaviour. Run a catalog refresh.
 `QUORUM_ROOM_CREATION` is set to something other than `public` — including a
 misspelling, which is read as `operator` on purpose. Unset it, or set it to
 exactly `public`.
+
+**The button is missing on my operator hostname too.** The comparison is
+against the `Host` header exactly: no scheme, no port, no path. Check
+`QUORUM_OPERATOR_HOSTNAME` for a stray `https://`, and check that the browser
+is on that name rather than being reverse-proxied to it under another — an
+ingress that rewrites `Host` on the way through hides the name Quorum is
+looking for.
+
+**My friends get a login page.** An invite link built on the protected
+hostname. Set `QUORUM_PUBLIC_URL` and create the room again: with it set, the
+create button lands you on the public hostname and every link the room shows
+belongs to it.
 
 **The host screen says the room already has a host.** That is the player seat,
 not the controls: the host may join the voting once, and a second attempt is

@@ -26,9 +26,16 @@ function InvitationOnly() {
 
 export function CreateScreen({
   roomCreation,
+  publicUrl,
 }: {
   /** `null` while `/api/instance` is still in flight. */
   roomCreation: RoomCreationMode | null;
+  /**
+   * Where the new room's links belong, when this page is not already there.
+   * Set only on an operator hostname — the protected name where the create
+   * button lives and where no friend can follow. `null` everywhere else.
+   */
+  publicUrl: string | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -63,7 +70,19 @@ export function CreateScreen({
               // The host link is the room's private address, so navigate to it
               // rather than rendering the host screen behind the landing URL:
               // a refresh or a bookmark then returns to these same controls.
-              globalThis.location.assign(created.hostPath);
+              //
+              // Absolute when the room belongs on another hostname: claiming
+              // the host session here would leave the cookie on a name only
+              // the operator can reach, and every link the host screen then
+              // shows — the invite above all — would carry that name to people
+              // who would be asked to log in to open it. One hop now puts the
+              // whole room where the group can reach it. The invite travels in
+              // the host view, so nothing is lost by leaving this origin.
+              globalThis.location.assign(
+                publicUrl === null
+                  ? created.hostPath
+                  : `${publicUrl}${created.hostPath}`,
+              );
             })
             .catch((caught: unknown) => {
               setNotice(
