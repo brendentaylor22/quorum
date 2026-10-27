@@ -2,6 +2,7 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
@@ -17,11 +18,13 @@ updates:
         update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
   - package-ecosystem: docker
     directory: /
+    target-branch: dev
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
