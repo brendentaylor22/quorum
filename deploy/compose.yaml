@@ -94,6 +94,9 @@ services:
       # TMDB v4 read access token, read from the file so it never reaches the
       # process table, `docker inspect`, or a log line.
       TMDB_READ_ACCESS_TOKEN_FILE: /run/secrets/tmdb_read_access_token
+      # OMDb key for IMDb and Rotten Tomatoes ratings. An empty file skips them.
+      OMDB_API_KEY_FILE: /run/secrets/omdb_api_key
+      QUORUM_OMDB_BUDGET: ${QUORUM_OMDB_BUDGET:-900}
       # 600 votes keeps the catalog to films with a meaningful rating, and
       # keeps the sweep under the item ceiling. Discovery runs newest-first, so
       # exceeding the ceiling would drop the oldest cinema, not the least
@@ -108,6 +111,7 @@ services:
       QUORUM_CATALOG_REGIONS: ${QUORUM_CATALOG_REGIONS:-GB,US}
     secrets:
       - tmdb_read_access_token
+      - omdb_api_key
     volumes:
       - quorum-data:/data
     networks:
@@ -202,6 +206,8 @@ secrets:
     file: ./secrets/token-secret
   tmdb_read_access_token:
     file: ./secrets/tmdb-read-access-token.secret
+  omdb_api_key:
+    file: ./secrets/omdb-api-key.secret
 
 volumes:
   quorum-data:
