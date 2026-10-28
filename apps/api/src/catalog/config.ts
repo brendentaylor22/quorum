@@ -12,6 +12,9 @@ export const CATALOG_DEFAULTS = {
   firstYear: 1930,
   concurrency: 12,
   maxItems: 20_000,
+  /** OMDb's free tier allows 1,000 a day; leave headroom for other use. */
+  omdbBudget: 900,
+  omdbRefreshDays: 30,
   certificationRegions: ['GB', 'US'] as const,
 } as const;
 
@@ -41,6 +44,23 @@ export function readTmdbToken(
   throw new Error(
     'Set TMDB_READ_ACCESS_TOKEN_FILE to a file holding the TMDB read access token',
   );
+}
+
+/**
+ * OMDb key for IMDb and Rotten Tomatoes ratings, or undefined to skip them.
+ * An empty key file is the documented way to opt out under Compose, which
+ * insists every declared secret file exists.
+ */
+export function readOmdbKey(
+  environment: CatalogEnvironment = process.env,
+): string | undefined {
+  const path = environment.OMDB_API_KEY_FILE;
+  const value =
+    path !== undefined && path.trim() !== ''
+      ? readFileSync(path, 'utf8')
+      : environment.OMDB_API_KEY;
+  const key = value?.trim();
+  return key === undefined || key === '' ? undefined : key;
 }
 
 /**
@@ -74,6 +94,23 @@ function list(value: string | undefined): string[] | undefined {
     .map((entry) => entry.trim())
     .filter((entry) => entry !== '');
   return entries.length === 0 ? undefined : entries;
+}
+
+export function ratingsBudgetFromEnvironment(
+  environment: CatalogEnvironment = process.env,
+): { budget: number; staleAfterDays: number } {
+  return {
+    budget: positiveInteger(
+      environment.QUORUM_OMDB_BUDGET,
+      CATALOG_DEFAULTS.omdbBudget,
+      'QUORUM_OMDB_BUDGET',
+    ),
+    staleAfterDays: positiveInteger(
+      environment.QUORUM_OMDB_REFRESH_DAYS,
+      CATALOG_DEFAULTS.omdbRefreshDays,
+      'QUORUM_OMDB_REFRESH_DAYS',
+    ),
+  };
 }
 
 export function importOptionsFromEnvironment(

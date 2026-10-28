@@ -45,6 +45,14 @@ The refresh container is short-lived and stopped in normal operation. The servin
 
 The entire network phase — the slow part — holds **no database lock**. Rows are only written once the whole catalog is known good, so a reader sees the old catalog right up until it sees the new one, never a mixture. A failure at any point before the commit leaves the previous catalog serving untouched.
 
+## IMDb and Rotten Tomatoes ratings
+
+The refresh also looks up each film's IMDb rating and Rotten Tomatoes score on [OMDb](https://www.omdbapi.com/), using the `imdb_id` TMDB already returns. They are stored on `catalog_items` and shown on the swipe card. Serving never contacts OMDb.
+
+OMDb's free tier allows 1,000 requests a day, far fewer than a full catalog, so each run spends at most `QUORUM_OMDB_BUDGET` (default 900) lookups and carries every earlier rating forward. Never-looked-up films go first, best-ranked first, so the top of the catalog fills in earliest; a first import completes over several daily runs. Ratings older than `QUORUM_OMDB_REFRESH_DAYS` (default 30) are looked up again. The run report's `ratings` block shows `fetched`, `failed` and `pending`; `stoppedEarly` means OMDb refused further requests (quota or key).
+
+A film with no value shows no badge; OMDb does not carry a Rotten Tomatoes score for every title. Credit OMDb and IMDb/Rotten Tomatoes as sources if you add an About page entry. OMDb's data is not licensed from IMDb or Rotten Tomatoes, so keep this to personal, non-commercial use.
+
 ## Retiring, not deleting
 
 `room_items.catalog_item_id` is a foreign key. A movie that drops out of a later import is marked `active = 0`, never deleted — deleting it would break an in-flight room and rewrite historical results.
@@ -74,6 +82,9 @@ A full first import of ~13,000 movies takes roughly 10–15 minutes, dominated b
 | `QUORUM_CATALOG_CONCURRENCY`  | `12`         | Parallel detail fetches.                                                                                                         |
 | `QUORUM_CATALOG_LANGUAGES`    | any          | Comma-separated allowed original languages.                                                                                      |
 | `QUORUM_CATALOG_REGIONS`      | `GB,US`      | Certification regions, in preference order.                                                                                      |
+| `OMDB_API_KEY_FILE`           | —            | Path to the OMDb key. Unset or empty skips ratings.                                                                              |
+| `QUORUM_OMDB_BUDGET`          | `900`        | Most OMDb lookups per run.                                                                                                       |
+| `QUORUM_OMDB_REFRESH_DAYS`    | `30`         | Age at which a stored rating is looked up again.                                                                                 |
 | `TMDB_BASE_URL`               | TMDB         | Test-only override for pointing at a local stub.                                                                                 |
 
 ## Do not refresh on startup

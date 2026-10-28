@@ -18,6 +18,12 @@ export interface CatalogWriteItem extends CatalogItem {
   weightedRating: number;
   genres: readonly TaxonomyEntry[];
   keywords: readonly TaxonomyEntry[];
+  /** Third-party ratings; absent for sources that carry none. */
+  imdbId?: string | null | undefined;
+  imdbRating?: number | null | undefined;
+  imdbVotes?: number | null | undefined;
+  rtScore?: number | null | undefined;
+  ratingsFetchedAt?: string | null | undefined;
 }
 
 /** Project a plain catalog item onto the write shape with no ranking signal. */
@@ -80,8 +86,9 @@ export function commitCatalogVersion(
        provider, provider_ref, media_type, title, release_year, synopsis,
        runtime_minutes, content_rating, language, image_ref, catalog_version,
        source_fetched_at, imported_at, vote_average, vote_count, popularity,
-       weighted_rating, active
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+       weighted_rating, imdb_id, imdb_rating, imdb_votes, rt_score,
+       ratings_fetched_at, active
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
      ON CONFLICT (provider, provider_ref) DO UPDATE SET
        title = excluded.title,
        release_year = excluded.release_year,
@@ -96,7 +103,12 @@ export function commitCatalogVersion(
        vote_average = excluded.vote_average,
        vote_count = excluded.vote_count,
        popularity = excluded.popularity,
-       weighted_rating = excluded.weighted_rating`,
+       weighted_rating = excluded.weighted_rating,
+       imdb_id = excluded.imdb_id,
+       imdb_rating = excluded.imdb_rating,
+       imdb_votes = excluded.imdb_votes,
+       rt_score = excluded.rt_score,
+       ratings_fetched_at = excluded.ratings_fetched_at`,
   );
   const findItem = database.prepare(
     'SELECT id FROM catalog_items WHERE provider = ? AND provider_ref = ?',
@@ -134,6 +146,11 @@ export function commitCatalogVersion(
         item.voteCount,
         item.popularity,
         item.weightedRating,
+        item.imdbId ?? null,
+        item.imdbRating ?? null,
+        item.imdbVotes ?? null,
+        item.rtScore ?? null,
+        item.ratingsFetchedAt ?? null,
       );
       const row = findItem.get(item.provider, item.providerRef) as
         { id: number } | undefined;
