@@ -222,6 +222,24 @@ export function SwipeDeck({ card, round, busy, onChoice }: SwipeDeckProps) {
               .filter((value) => value !== null && value !== undefined)
               .join(' · ')}
           </p>
+          {card.item.imdbRating === null &&
+          card.item.rottenTomatoesScore === null ? null : (
+            <p
+              className="meta ratings"
+              aria-label="Critic and audience ratings"
+            >
+              {[
+                card.item.imdbRating === null
+                  ? null
+                  : `IMDb ${card.item.imdbRating.toFixed(1)}`,
+                card.item.rottenTomatoesScore === null
+                  ? null
+                  : `Rotten Tomatoes ${card.item.rottenTomatoesScore.toString()}%`,
+              ]
+                .filter((value) => value !== null)
+                .join(' · ')}
+            </p>
+          )}
           {card.item.genres.length === 0 ? null : (
             <ul className="genres" aria-label="Genres">
               {card.item.genres.map((genre) => (

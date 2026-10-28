@@ -49,6 +49,8 @@ export interface SlateItemRow {
   runtimeMinutes: number | null;
   contentRating: string | null;
   imageRef: string | null;
+  imdbRating: number | null;
+  rtScore: number | null;
   genres: string[];
   reason: string | null;
   /** Recommender score, 0-1. Null on a top-rated or exploration pick. */
@@ -74,7 +76,8 @@ const slateColumns = `ri.id AS roomItemId, ri.slate_position AS slatePosition,
   c.id AS catalogItemId, c.provider_ref AS providerRef, c.title AS title,
   c.release_year AS releaseYear, c.synopsis AS synopsis,
   c.runtime_minutes AS runtimeMinutes, c.content_rating AS contentRating,
-  c.image_ref AS imageRef, ri.reason AS reason, ri.score AS score,
+  c.image_ref AS imageRef, c.imdb_rating AS imdbRating,
+  c.rt_score AS rtScore, ri.reason AS reason, ri.score AS score,
   (SELECT group_concat(g.name, char(31))
      FROM catalog_item_genres cig
      JOIN catalog_genres g ON g.id = cig.genre_id

@@ -12,6 +12,11 @@ import {
   type TmdbClient,
 } from '@quorum/tmdb';
 import {
+  attachRatings,
+  type RatingsOptions,
+  type RatingsReport,
+} from './ratings.js';
+import {
   cacheCutoff,
   commitCatalogVersion,
   purgeRetiredCatalogItems,
@@ -40,6 +45,11 @@ export interface ImportOptions {
    * says when that happened, so a truncated catalog is never silent.
    */
   maxItems: number;
+  /**
+   * IMDb and Rotten Tomatoes lookups. Omit `lookup` to only carry ratings
+   * already stored forward.
+   */
+  ratings?: Pick<RatingsOptions, 'lookup' | 'budget' | 'staleAfterDays'>;
   signal?: AbortSignal | undefined;
   now?: () => Date;
   onProgress?: (progress: ImportProgress) => void;
@@ -74,6 +84,7 @@ export interface ImportReport {
    * year range, meaning the oldest part of the catalog was never reached.
    */
   cappedAtMaxItems: boolean;
+  ratings: RatingsReport;
   startedAt: string;
   completedAt: string;
 }
@@ -206,7 +217,17 @@ export async function importTmdbCatalog(
 
   report('commit');
   const completedAt = clock().toISOString();
-  const ranked = applyWeightedRatings(accepted, options.ratingPriorVotes);
+  const { items: ranked, report: ratings } = await attachRatings(
+    database,
+    applyWeightedRatings(accepted, options.ratingPriorVotes),
+    {
+      budget: 0,
+      staleAfterDays: 30,
+      ...options.ratings,
+      now: new Date(completedAt),
+      signal: options.signal,
+    },
+  );
   commitCatalogVersion(database, {
     version,
     provider: TMDB_PROVIDER,
@@ -239,6 +260,7 @@ export async function importTmdbCatalog(
     truncatedYears,
     purged,
     cappedAtMaxItems: accepted.length >= options.maxItems,
+    ratings,
     startedAt,
     completedAt,
   };

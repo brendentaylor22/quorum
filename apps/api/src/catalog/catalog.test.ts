@@ -413,6 +413,7 @@ describe('0003 upgrade path', () => {
       '0005_catalog_images.sql',
       '0006_slate_scores.sql',
       '0007_host_claim.sql',
+      '0008_external_ratings.sql',
     ]);
 
     const status = catalogStatus(database);

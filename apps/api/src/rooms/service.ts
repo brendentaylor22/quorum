@@ -781,6 +781,8 @@ export class RoomService {
       runtimeMinutes: item.runtimeMinutes,
       contentRating: item.contentRating,
       genres: item.genres,
+      imdbRating: item.imdbRating,
+      rottenTomatoesScore: item.rtScore,
       posterRef: item.imageRef,
       // A fixture reference is not a provider path, so it yields no URL and
       // the client falls back to its placeholder tile.

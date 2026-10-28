@@ -12,10 +12,13 @@ import {
 import { TmdbClient } from '@quorum/tmdb';
 import {
   importOptionsFromEnvironment,
+  ratingsBudgetFromEnvironment,
+  readOmdbKey,
   readTmdbToken,
   tmdbBaseUrl,
 } from './catalog/config.js';
 import { importTmdbCatalog } from './catalog/importer.js';
+import { fetchOmdbRatings } from './catalog/omdb.js';
 import {
   TMDB_CACHE_MAX_DAYS,
   catalogAgeDays,
@@ -130,8 +133,17 @@ async function catalogRefresh(path: string): Promise<void> {
         );
       },
     });
+    const omdbKey = readOmdbKey();
     const report = await importTmdbCatalog(database, client, {
       ...options,
+      ratings: {
+        ...ratingsBudgetFromEnvironment(),
+        lookup:
+          omdbKey === undefined
+            ? undefined
+            : (imdbId, signal) =>
+                fetchOmdbRatings(imdbId, { apiKey: omdbKey }, signal),
+      },
       onProgress: (progress) => {
         console.error(
           `${progress.phase} discovered=${progress.discovered.toString()}` +

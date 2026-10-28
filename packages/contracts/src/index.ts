@@ -80,6 +80,10 @@ export const catalogItemSchema = z.object({
    * carries no genre data, which is the case for the development fixture.
    */
   genres: z.array(z.string()),
+  /** IMDb rating out of 10, or null when not (yet) looked up. */
+  imdbRating: z.number().nullable(),
+  /** Rotten Tomatoes Tomatometer percentage, or null when unavailable. */
+  rottenTomatoesScore: z.number().int().nullable(),
   /** Raw provider reference, kept for diagnostics. Not a URL. */
   posterRef: z.string().nullable(),
   /**

@@ -11,6 +11,10 @@ The application keys every stored invite, host, and session hash with it. Rotati
 
 Create `tunnel-credentials.json` here with mode `0440`, owned by deployment administrator and numeric group `65532` so non-root `cloudflared` can read it. Keep deployment directory accessible only to administrator. Directory and JSON files are ignored by Git.
 
+## OMDb credential
+
+Create `omdb-api-key.secret` for IMDb and Rotten Tomatoes ratings. Request a free key at <https://www.omdbapi.com/apikey.aspx> and put it on a single line, as for the TMDB token. To skip ratings, create the file empty (`touch deploy/secrets/omdb-api-key.secret`); Compose requires the file to exist either way.
+
 ## TMDB credential
 
 Create `tmdb-read-access-token.secret` holding the TMDB **v4 read access token** on a single line:
