@@ -18,7 +18,7 @@
     "@quorum/ranking": "0.1.0",
     "@quorum/recommend": "0.1.0",
     "@quorum/tmdb": "0.1.0",
-    "fastify": "5.12.5"
+    "fastify": "5.12.7"
   },
   "devDependencies": {
     "tsx": "4.23.12"
