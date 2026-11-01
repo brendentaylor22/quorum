@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
-    "@fastify/static": "10.1.3",
+    "@fastify/static": "10.1.8",
     "@quorum/catalog": "0.1.0",
     "@quorum/contracts": "0.1.0",
     "@quorum/database": "0.1.0",
